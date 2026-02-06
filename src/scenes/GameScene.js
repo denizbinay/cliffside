@@ -488,6 +488,8 @@ export default class GameScene extends Phaser.Scene {
     this.events.on("shop-reroll", () => this.requestShopReroll(SIDE.PLAYER));
     this.events.on("stance-select", (payload) => this.selectStance(payload, SIDE.PLAYER));
     this.events.on("ability-request", (id) => this.requestAbility(id));
+
+    this.emitUiState();
   }
 
   update(_, deltaMs) {
@@ -549,6 +551,8 @@ export default class GameScene extends Phaser.Scene {
     }
 
     this.checkGameOver();
+
+    this.emitUiState();
   }
 
   createBackground() {
@@ -831,6 +835,51 @@ export default class GameScene extends Phaser.Scene {
       if (elapsed >= this.waveSchedule[i].time) stageIndex = i;
     }
     return stageIndex;
+  }
+
+  getPhaseLabel() {
+    const stageIndex = this.getStageIndex();
+    const phaseLabels = ["Early", "Mid", "Late", "Final"];
+    return phaseLabels[stageIndex] || `Phase ${stageIndex + 1}`;
+  }
+
+  buildUiState() {
+    return {
+      playerResources: this.playerResources,
+      playerIncome: this.getIncomeDetails(SIDE.PLAYER).total,
+      playerCastle: {
+        hp: this.playerCastle?.hp || 0,
+        maxHp: this.playerCastle?.maxHp || 1
+      },
+      aiCastle: {
+        hp: this.aiCastle?.hp || 0,
+        maxHp: this.aiCastle?.maxHp || 1
+      },
+      controlPoints: (this.controlPoints || []).map((point) => point.owner),
+      wave: {
+        countdown: this.waveCountdown,
+        interval: this.getWaveInterval(this.matchTime || 0),
+        locked: this.waveLocked,
+        number: this.waveNumber || 0,
+        phaseLabel: this.getPhaseLabel(),
+        stageIndex: this.getStageIndex()
+      },
+      shop: {
+        offers: this.shop?.player?.offers || [],
+        rerollCost: this.getRerollCost(SIDE.PLAYER),
+        canReroll: this.playerResources >= this.getRerollCost(SIDE.PLAYER) && !this.isGameOver && !this.waveLocked
+      },
+      waveDraft: this.playerDraft,
+      waveSupply: this.waveSupply,
+      waveSlots: this.waveSlots,
+      waveStance: this.waveStance?.player || "normal",
+      abilityCooldowns: this.abilityCooldowns,
+      isGameOver: this.isGameOver
+    };
+  }
+
+  emitUiState() {
+    this.events.emit("ui-state", this.buildUiState());
   }
 
   getTierCap() {
