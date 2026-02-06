@@ -1,6 +1,8 @@
 import Phaser from "phaser";
 import { UNIT_TYPES } from "../data/units.js";
 import { ABILITIES } from "../data/abilities.js";
+import { SHOP_CONFIG } from "../data/shop.js";
+import { STANCES } from "../data/stances.js";
 
 const ROLE_LABELS = {
   frontline: "Frontline",
@@ -27,7 +29,7 @@ export default class UIScene extends Phaser.Scene {
     this.layoutTopBar();
     this.createBottomLayout();
     this.createTopBar();
-    this.createRoster();
+    this.createShop();
     this.createAbilities();
     this.createWaveBuilder();
     this.createTooltip();
@@ -198,59 +200,105 @@ export default class UIScene extends Phaser.Scene {
     this.wavePhaseText.setOrigin(0, 0.5);
   }
 
-  createRoster() {
+  createShop() {
     const layout = this.bottomLayout;
     const headerY = layout.contentY;
 
-    this.add.text(layout.leftX, headerY, "Troops", {
+    this.add.text(layout.leftX, headerY, "Shop", {
       fontFamily: "Cinzel",
       fontSize: "18px",
       color: "#f0e6d6"
     });
-    this.add.text(layout.leftX + 90, headerY + 2, "Pick a slot, then a troop", {
+    this.add.text(layout.leftX + 62, headerY + 2, "Buy into the wave", {
       fontFamily: "Alegreya Sans",
       fontSize: "12px",
       color: "#9aa6ba"
     });
 
-    this.buttons = [];
-    this.rosterCounts = {};
+    const rerollX = layout.leftX + layout.leftWidth - 64;
+    this.shopRerollBtn = this.createMiniButton(rerollX, headerY + 2, 22, "R", () => {
+      this.gameScene.events.emit("shop-reroll");
+    });
+    this.shopRerollLabel = this.add.text(rerollX + 28, headerY + 2, "Reroll", {
+      fontFamily: "Alegreya Sans",
+      fontSize: "12px",
+      color: "#d4c7b0"
+    });
+    this.shopRerollCost = this.add.text(rerollX + 28, headerY + 16, "Cost 0", {
+      fontFamily: "Alegreya Sans",
+      fontSize: "10px",
+      color: "#9aa6ba"
+    });
+
+    this.shopCards = [];
     const cols = 2;
     const colGap = 12;
     const rowGap = 10;
-    const buttonHeight = 52;
+    const buttonHeight = 54;
     const buttonWidth = Math.floor((layout.leftWidth - colGap) / cols);
-    const gridTop = headerY + 24;
+    const gridTop = headerY + 26;
 
-    Object.values(UNIT_TYPES).forEach((unit, index) => {
-      const col = index % cols;
-      const row = Math.floor(index / cols);
+    for (let i = 0; i < SHOP_CONFIG.offersPerWave; i += 1) {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
       const x = layout.leftX + col * (buttonWidth + colGap);
       const y = gridTop + row * (buttonHeight + rowGap);
 
-      const btn = this.createButton(x, y, buttonWidth, buttonHeight, () => {
+      const btn = this.createButton(x, y, buttonWidth, buttonHeight, () => {});
+      btn.meta = { type: "shop", id: null };
+
+      btn.rect.on("pointerup", () => {
+        if (this.isDraggingShop) return;
         if (this.gameScene.isGameOver || this.gameScene.waveLocked) return;
-        const payload = { id: unit.id, slot: this.activeSlot };
+        if (!btn.meta.id) return;
+        const payload = { id: btn.meta.id, slot: this.activeSlot, fromShop: true };
         if (this.activeSlotIndex !== null) payload.index = this.activeSlotIndex;
         this.gameScene.events.emit("queue-add", payload);
         this.activeSlotIndex = null;
       });
 
-      btn.title.setText(unit.name);
-      btn.subtitle.setText(`${ROLE_LABELS[unit.role]} | Add ${unit.cost}`);
-      btn.meta = { type: "unit", id: unit.id, cost: unit.cost };
-      btn.roleTag.setText(unit.role === "frontline" ? "F" : unit.role === "damage" ? "D" : unit.role === "support" ? "S" : "X");
-      btn.roleTagBg.setFillStyle(unit.role === "frontline" ? 0x5f7685 : unit.role === "damage" ? 0xa67f5d : unit.role === "support" ? 0x8fbf99 : 0xb35f5f);
+      this.input.setDraggable(btn.rect);
+      this.shopCards.push(btn);
+    }
 
-      const countText = this.add.text(x + buttonWidth - 16, y + 16, "0", {
-        fontFamily: "Alegreya Sans",
-        fontSize: "12px",
-        color: "#f0e6d6"
+    this.isDraggingShop = false;
+    this.dragGhost = null;
+    this.input.on("dragstart", (pointer, gameObject) => {
+      if (!gameObject.meta || gameObject.meta.type !== "shop") return;
+      if (!gameObject.meta.id) return;
+      if (this.gameScene.waveLocked || this.gameScene.isGameOver) return;
+      this.isDraggingShop = true;
+      const unit = UNIT_TYPES[gameObject.meta.id];
+      if (!unit) return;
+      const ghost = this.add.container(pointer.x, pointer.y);
+      const bg = this.add.rectangle(0, 0, 34, 34, unit.color, 0.8).setStrokeStyle(2, 0x1c1f27, 1);
+      const text = this.add.text(0, 0, unit.name.charAt(0), {
+        fontFamily: "Cinzel",
+        fontSize: "16px",
+        color: "#f7f2e6"
       });
-      countText.setOrigin(0.5, 0.5);
-      this.rosterCounts[unit.id] = countText;
+      text.setOrigin(0.5, 0.5);
+      ghost.add([bg, text]);
+      ghost.setDepth(20);
+      this.dragGhost = { container: ghost, id: unit.id };
+    });
 
-      this.buttons.push(btn);
+    this.input.on("drag", (pointer) => {
+      if (!this.dragGhost) return;
+      this.dragGhost.container.setPosition(pointer.x, pointer.y);
+    });
+
+    this.input.on("dragend", (pointer) => {
+      if (!this.dragGhost) return;
+      const dropped = this.findDropSlot(pointer.x, pointer.y);
+      if (dropped) {
+        const payload = { id: this.dragGhost.id, slot: dropped.row, index: dropped.index, fromShop: true };
+        this.gameScene.events.emit("queue-add", payload);
+        this.activeSlotIndex = null;
+      }
+      this.dragGhost.container.destroy();
+      this.dragGhost = null;
+      this.isDraggingShop = false;
     });
   }
 
@@ -315,11 +363,38 @@ export default class UIScene extends Phaser.Scene {
       wordWrap: { width: infoWidth }
     });
 
+    const stanceLabelY = headerY + 44;
+    this.add.text(layout.midX, stanceLabelY, "Stance", {
+      fontFamily: "Alegreya Sans",
+      fontSize: "12px",
+      color: "#9aa6ba"
+    });
+
+    const stanceIds = ["normal", "defensive", "aggressive"];
+    const stanceLabel = { normal: "N", defensive: "D", aggressive: "A" };
+    const stanceY = stanceLabelY + 16;
+    const stanceStartX = layout.midX + 56;
+    const stanceGap = 8;
+    this.stanceButtons = {};
+    stanceIds.forEach((id, index) => {
+      const btn = this.createMiniButton(
+        stanceStartX + index * (22 + stanceGap),
+        stanceY,
+        22,
+        stanceLabel[id],
+        () => {
+          this.gameScene.events.emit("stance-select", { id });
+        }
+      );
+      btn.rect.meta = { type: "stance", id };
+      this.stanceButtons[id] = btn;
+    });
+
     const rowSlots = this.gameScene.waveSlots || { front: 4, mid: 4, rear: 4 };
     const maxSlots = Math.max(rowSlots.front, rowSlots.mid, rowSlots.rear);
     const labelWidth = 54;
     const rowGap = 8;
-    const gridTop = headerY + 58;
+    const gridTop = headerY + 86;
     const slotStartX = layout.midX + labelWidth + 10;
     const slotAreaWidth = layout.midWidth - labelWidth - 10;
     let slotGap = 8;
@@ -390,6 +465,16 @@ export default class UIScene extends Phaser.Scene {
       }
     });
 
+  }
+
+  findDropSlot(x, y) {
+    for (const tile of this.slotTiles || []) {
+      const bounds = tile.rect.getBounds();
+      if (Phaser.Geom.Rectangle.Contains(bounds, x, y)) {
+        return tile;
+      }
+    }
+    return null;
   }
 
   createTooltip() {
@@ -463,8 +548,14 @@ export default class UIScene extends Phaser.Scene {
       color: "#f3ead7"
     });
     text.setOrigin(0.5, 0.5);
-    rect.on("pointerover", () => rect.setFillStyle(0x3a4150));
-    rect.on("pointerout", () => rect.setFillStyle(0x2b303b));
+    rect.on("pointerover", () => {
+      rect.setFillStyle(0x3a4150);
+      this.showTooltip(rect.x + size + 8, rect.y, { meta: rect.meta });
+    });
+    rect.on("pointerout", () => {
+      rect.setFillStyle(0x2b303b);
+      this.hideTooltip();
+    });
     rect.on("pointerdown", () => onClick());
     return { rect, text };
   }
@@ -472,11 +563,16 @@ export default class UIScene extends Phaser.Scene {
   showTooltip(x, y, button) {
     if (!button || !button.meta) return;
     const meta = button.meta;
-    if (meta.type === "unit") {
+    if (meta.type === "unit" || meta.type === "shop") {
+      if (!meta.id) return;
       const unit = UNIT_TYPES[meta.id];
       this.tooltipText.setText(
         `${unit.name}\n${unit.summary}\n${unit.special}\nHP ${unit.hp} | DMG ${unit.dmg}\nRange ${unit.range} | Speed ${unit.speed}`
       );
+    } else if (meta.type === "stance") {
+      const stance = STANCES[meta.id];
+      if (!stance) return;
+      this.tooltipText.setText(`${stance.name}\n${stance.summary}`);
     } else if (meta.type === "ability") {
       const ability = ABILITIES[meta.id];
       const desc = ability.id === "healWave" ? "Heals all allies across the board." : "Pushes and stuns enemies on your platform.";
@@ -530,9 +626,27 @@ export default class UIScene extends Phaser.Scene {
     this.playerHpText.setText(`Castle: ${Math.ceil(this.gameScene.playerCastle.hp)}`);
     this.aiHpText.setText(`Enemy: ${Math.ceil(this.gameScene.aiCastle.hp)}`);
 
-    for (const btn of this.buttons) {
-      const enabled = playerRes >= btn.meta.cost && !this.gameScene.isGameOver && !this.gameScene.waveLocked;
-      btn.rect.setAlpha(enabled ? 1 : 0.45);
+    const shopOffers = this.gameScene.shop?.player?.offers || [];
+    for (let i = 0; i < this.shopCards.length; i += 1) {
+      const card = this.shopCards[i];
+      const id = shopOffers[i] || null;
+      if (id) {
+        const unit = UNIT_TYPES[id];
+        card.title.setText(unit.name);
+        card.subtitle.setText(`${ROLE_LABELS[unit.role]} | Buy ${unit.cost}`);
+        card.meta = { type: "shop", id: unit.id, cost: unit.cost };
+        card.roleTag.setText(unit.role === "frontline" ? "F" : unit.role === "damage" ? "D" : unit.role === "support" ? "S" : "X");
+        card.roleTagBg.setFillStyle(unit.role === "frontline" ? 0x5f7685 : unit.role === "damage" ? 0xa67f5d : unit.role === "support" ? 0x8fbf99 : 0xb35f5f);
+        const enabled = playerRes >= unit.cost && !this.gameScene.isGameOver && !this.gameScene.waveLocked;
+        card.rect.setAlpha(enabled ? 1 : 0.45);
+      } else {
+        card.title.setText("No offer");
+        card.subtitle.setText("--");
+        card.meta = { type: "shop", id: null, cost: 0 };
+        card.roleTag.setText("-");
+        card.roleTagBg.setFillStyle(0x3a4150);
+        card.rect.setAlpha(0.35);
+      }
     }
 
     const draft = this.gameScene.playerDraft || { front: [], mid: [], rear: [] };
@@ -542,14 +656,6 @@ export default class UIScene extends Phaser.Scene {
     const locked = this.gameScene.waveLocked;
 
     const slotIds = [...draft.front, ...draft.mid, ...draft.rear].filter(Boolean);
-    const queueCounts = [...slotIds].reduce(
-      (acc, id) => {
-        acc[id] = (acc[id] || 0) + 1;
-        return acc;
-      },
-      {}
-    );
-
     const totalQueued = slotIds.length;
     const sendCount = Math.min(slotIds.length, waveSupply);
     const lockLabel = locked ? " | Locked" : "";
@@ -557,9 +663,18 @@ export default class UIScene extends Phaser.Scene {
       `Queue: ${totalQueued} | Supply: ${slotIds.length}/${waveSupply} | Auto ${interval}s${lockLabel}`
     );
 
-    Object.keys(this.rosterCounts || {}).forEach((id) => {
-      const count = queueCounts[id] || 0;
-      this.rosterCounts[id].setText(String(count));
+    const rerollCost = this.gameScene.getRerollCost("player");
+    const rerollEnabled = playerRes >= rerollCost && !this.gameScene.isGameOver && !this.gameScene.waveLocked;
+    this.shopRerollBtn.rect.setAlpha(rerollEnabled ? 1 : 0.45);
+    this.shopRerollBtn.text.setAlpha(rerollEnabled ? 1 : 0.45);
+    this.shopRerollCost.setText(`Cost ${rerollCost}`);
+
+    const currentStance = this.gameScene.waveStance?.player || "normal";
+    Object.entries(this.stanceButtons || {}).forEach(([id, btn]) => {
+      const isActive = currentStance === id;
+      btn.rect.setFillStyle(isActive ? 0x3a4150 : 0x2b303b);
+      btn.rect.setAlpha(locked ? 0.6 : 1);
+      btn.text.setAlpha(locked ? 0.6 : 1);
     });
 
     Object.entries(this.rowButtons || {}).forEach(([slot, btn]) => {

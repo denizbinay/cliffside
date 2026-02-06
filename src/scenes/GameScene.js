@@ -1,6 +1,8 @@
 import Phaser from "phaser";
 import { UNIT_TYPES } from "../data/units.js";
 import { ABILITIES } from "../data/abilities.js";
+import { SHOP_CONFIG } from "../data/shop.js";
+import { STANCES } from "../data/stances.js";
 
 const SIDE = {
   PLAYER: "player",
@@ -8,20 +10,27 @@ const SIDE = {
 };
 
 class Unit {
-  constructor(scene, config, side, x, y) {
+  constructor(scene, config, side, x, y, modifiers = {}) {
     this.scene = scene;
     this.config = config;
     this.side = side;
     this.role = config.role;
 
-    this.maxHp = config.hp;
-    this.hp = config.hp;
-    this.dmg = config.dmg;
-    this.range = config.range;
-    this.baseSpeed = config.speed;
-    this.attackRate = config.attackRate;
+    const hpMult = modifiers.hpMult || 1;
+    const dmgMult = modifiers.dmgMult || 1;
+    const rangeMult = modifiers.rangeMult || 1;
+    const speedMult = modifiers.speedMult || 1;
+    const attackRateMult = modifiers.attackRateMult || 1;
+    const healMult = modifiers.healMult || 1;
+
+    this.maxHp = config.hp * hpMult;
+    this.hp = this.maxHp;
+    this.dmg = config.dmg * dmgMult;
+    this.range = config.range * rangeMult;
+    this.baseSpeed = config.speed * speedMult;
+    this.attackRate = config.attackRate * attackRateMult;
     this.attackCooldown = 0;
-    this.healAmount = config.healAmount || 0;
+    this.healAmount = (config.healAmount || 0) * healMult;
 
     this.status = {
       stun: 0,
@@ -452,6 +461,15 @@ export default class GameScene extends Phaser.Scene {
     this.playerDraft = this.createWaveDraft();
     this.aiDraft = this.createWaveDraft();
 
+    this.shop = {
+      player: { offers: [], rerolls: 0 },
+      ai: { offers: [], rerolls: 0 }
+    };
+    this.rollShopOffers(SIDE.PLAYER, true);
+    this.rollShopOffers(SIDE.AI, true);
+
+    this.waveStance = { player: "normal", ai: "normal" };
+
     this.ghostAlpha = 0.35;
     this.createGhostFormation();
 
@@ -467,6 +485,8 @@ export default class GameScene extends Phaser.Scene {
     this.events.on("spawn-request", (type) => this.requestSpawn(type));
     this.events.on("queue-add", (payload) => this.queueUnit(payload, SIDE.PLAYER));
     this.events.on("queue-remove", (payload) => this.removeQueuedUnit(payload, SIDE.PLAYER));
+    this.events.on("shop-reroll", () => this.requestShopReroll(SIDE.PLAYER));
+    this.events.on("stance-select", (payload) => this.selectStance(payload, SIDE.PLAYER));
     this.events.on("ability-request", (id) => this.requestAbility(id));
   }
 
@@ -491,6 +511,8 @@ export default class GameScene extends Phaser.Scene {
       this.waveNumber += 1;
       this.sendWave(SIDE.PLAYER);
       this.sendWave(SIDE.AI);
+      this.rollShopOffers(SIDE.PLAYER, true);
+      this.rollShopOffers(SIDE.AI, true);
       this.waveCountdown += this.getWaveInterval(this.matchTime);
     }
     this.waveLocked = this.waveCountdown <= this.waveLockSeconds;
@@ -689,7 +711,7 @@ export default class GameScene extends Phaser.Scene {
   }
 
   requestSpawn(type) {
-    this.queueUnit(type, SIDE.PLAYER);
+    this.queueUnit({ id: type, fromShop: true }, SIDE.PLAYER);
   }
 
   createWaveDraft() {
@@ -803,6 +825,128 @@ export default class GameScene extends Phaser.Scene {
     return interval;
   }
 
+  getStageIndex(elapsed = this.matchTime) {
+    let stageIndex = 0;
+    for (let i = 0; i < this.waveSchedule.length; i += 1) {
+      if (elapsed >= this.waveSchedule[i].time) stageIndex = i;
+    }
+    return stageIndex;
+  }
+
+  getTierCap() {
+    const stageIndex = this.getStageIndex();
+    const caps = SHOP_CONFIG.stageTierCaps;
+    return caps[Math.min(stageIndex, caps.length - 1)];
+  }
+
+  getEligibleShopUnits() {
+    const stageIndex = this.getStageIndex();
+    const tierCap = this.getTierCap();
+    return Object.values(UNIT_TYPES).filter(
+      (unit) => unit.stageMin <= stageIndex && unit.tier <= tierCap
+    );
+  }
+
+  pickWeighted(units) {
+    const total = units.reduce((sum, unit) => sum + (unit.shopWeight || 1), 0);
+    let roll = Phaser.Math.FloatBetween(0, total);
+    for (const unit of units) {
+      roll -= unit.shopWeight || 1;
+      if (roll <= 0) return unit;
+    }
+    return units[units.length - 1];
+  }
+
+  rollShopOffers(side, resetRerolls = false) {
+    const shop = this.shop[side];
+    if (!shop) return;
+    if (resetRerolls) shop.rerolls = 0;
+
+    const eligible = this.getEligibleShopUnits();
+    if (eligible.length === 0) {
+      shop.offers = [];
+      return;
+    }
+
+    const offers = [];
+    let pool = [...eligible];
+    const stageIndex = this.getStageIndex();
+    const guarantees = stageIndex === 0 ? SHOP_CONFIG.earlyRoleGuarantees : [];
+
+    for (const role of guarantees) {
+      const rolePool = pool.filter((unit) => unit.role === role);
+      if (rolePool.length === 0) continue;
+      const pick = this.pickWeighted(rolePool);
+      offers.push(pick.id);
+      pool = pool.filter((unit) => unit.id !== pick.id);
+    }
+
+    while (offers.length < SHOP_CONFIG.offersPerWave && pool.length > 0) {
+      const pick = this.pickWeighted(pool);
+      offers.push(pick.id);
+      pool = pool.filter((unit) => unit.id !== pick.id);
+    }
+
+    while (offers.length < SHOP_CONFIG.offersPerWave) {
+      const pick = this.pickWeighted(eligible);
+      offers.push(pick.id);
+    }
+
+    shop.offers = offers;
+  }
+
+  getRerollCost(side) {
+    const shop = this.shop[side];
+    if (!shop) return SHOP_CONFIG.baseRerollCost;
+    return SHOP_CONFIG.baseRerollCost + shop.rerolls * SHOP_CONFIG.rerollCostGrowth;
+  }
+
+  requestShopReroll(side) {
+    if (this.isGameOver) return false;
+    if (this.waveLocked) return false;
+    const cost = this.getRerollCost(side);
+    if (side === SIDE.PLAYER) {
+      if (this.playerResources < cost) return false;
+      this.playerResources -= cost;
+    } else {
+      if (this.aiResources < cost) return false;
+      this.aiResources -= cost;
+    }
+    this.shop[side].rerolls += 1;
+    this.rollShopOffers(side, false);
+    this.emitResourceUpdate();
+    return true;
+  }
+
+  isShopUnitAvailable(side, type) {
+    const shop = this.shop[side];
+    if (!shop) return false;
+    return shop.offers.includes(type);
+  }
+
+  claimShopOffer(side, type) {
+    const shop = this.shop[side];
+    if (!shop) return false;
+    const index = shop.offers.indexOf(type);
+    if (index === -1) return false;
+    shop.offers.splice(index, 1);
+    return true;
+  }
+
+  selectStance(payload, side) {
+    if (this.isGameOver) return false;
+    if (this.waveLocked) return false;
+    const id = typeof payload === "string" ? payload : payload.id;
+    if (!STANCES[id]) return false;
+    this.waveStance[side] = id;
+    return true;
+  }
+
+  getStance(side) {
+    const id = this.waveStance[side] || "normal";
+    return STANCES[id] || STANCES.normal;
+  }
+
   getDraft(side) {
     return side === SIDE.PLAYER ? this.playerDraft : this.aiDraft;
   }
@@ -829,6 +973,7 @@ export default class GameScene extends Phaser.Scene {
     if (this.waveLocked) return false;
 
     const type = typeof payload === "string" ? payload : payload.id;
+    const fromShop = typeof payload === "object" && payload.fromShop === true;
     let slot = typeof payload === "string" ? null : payload.slot || null;
     const index = typeof payload === "string" ? null : payload.index;
 
@@ -836,6 +981,9 @@ export default class GameScene extends Phaser.Scene {
     if (!config) return false;
     const cost = config.cost;
     const draft = this.getDraft(side);
+    const requiresShop = side === SIDE.PLAYER || side === SIDE.AI;
+    if (requiresShop && !fromShop) return false;
+    if (requiresShop && !this.isShopUnitAvailable(side, type)) return false;
     if (!slot) slot = this.getFirstAvailableSlot(draft) || "mid";
     const slotList = this.getDraftSlotList(draft, slot);
     if (!slotList) return false;
@@ -857,9 +1005,15 @@ export default class GameScene extends Phaser.Scene {
 
     if (side === SIDE.PLAYER) {
       if (this.playerResources < cost) return false;
-      this.playerResources -= cost;
     } else {
       if (this.aiResources < cost) return false;
+    }
+
+    if (requiresShop && !this.claimShopOffer(side, type)) return false;
+
+    if (side === SIDE.PLAYER) {
+      this.playerResources -= cost;
+    } else {
       this.aiResources -= cost;
     }
 
@@ -902,12 +1056,6 @@ export default class GameScene extends Phaser.Scene {
     }
     if (!removed) return false;
 
-    if (side === SIDE.PLAYER) {
-      this.playerResources += config.cost;
-    } else {
-      this.aiResources += config.cost;
-    }
-    this.emitResourceUpdate();
     return true;
   }
 
@@ -931,6 +1079,10 @@ export default class GameScene extends Phaser.Scene {
       roleMult[role] = Math.max(0.6, 1 - extra * 0.1);
     });
 
+    const stance = this.getStance(side);
+    const stanceMods = stance.modifiers || {};
+    const stancePresence = stanceMods.presenceMult || 1;
+
     draft.front = Array(this.waveSlots.front).fill(null);
     draft.mid = Array(this.waveSlots.mid).fill(null);
     draft.rear = Array(this.waveSlots.rear).fill(null);
@@ -938,9 +1090,9 @@ export default class GameScene extends Phaser.Scene {
     ordered.forEach((type, index) => {
       const offset = (index - (count - 1) / 2) * spread;
       const delay = index * this.waveStagger * 1000;
-      const presenceMult = roleMult[UNIT_TYPES[type]?.role || "unknown"] || 1;
+      const presenceMult = (roleMult[UNIT_TYPES[type]?.role || "unknown"] || 1) * stancePresence;
       this.time.delayedCall(delay, () => {
-        this.spawnUnit(type, side, { payCost: false, offset, presenceMult });
+        this.spawnUnit(type, side, { payCost: false, offset, presenceMult, modifiers: stanceMods });
       });
     });
 
@@ -949,7 +1101,7 @@ export default class GameScene extends Phaser.Scene {
 
   spawnUnit(type, side, options = {}) {
     if (this.isGameOver) return false;
-    const { payCost = true, offset = 0, presenceMult = 1 } = options;
+    const { payCost = true, offset = 0, presenceMult = 1, modifiers = {} } = options;
     const config = UNIT_TYPES[type];
     if (!config) return false;
     const cost = config.cost;
@@ -965,7 +1117,7 @@ export default class GameScene extends Phaser.Scene {
 
     const spawnX =
       side === SIDE.PLAYER ? this.platformLeftStart + 40 : this.platformRightEnd - 40;
-    const unit = new Unit(this, config, side, spawnX + offset, this.bridgeY);
+    const unit = new Unit(this, config, side, spawnX + offset, this.bridgeY, modifiers);
     unit.presenceMult = presenceMult;
     if (side === SIDE.PLAYER) {
       this.playerUnits.push(unit);
@@ -1260,23 +1412,61 @@ export default class GameScene extends Phaser.Scene {
   aiDecision() {
     if (this.isGameOver) return;
     if (this.waveLocked) return;
-    const aiFrontline = this.aiUnits.filter((u) => u.role === "frontline").length;
-    const playerRoles = this.playerUnits.reduce(
-      (acc, unit) => {
-        acc[unit.role] = (acc[unit.role] || 0) + 1;
+    const aiPoints = this.controlPoints.filter((point) => point.owner === SIDE.AI).length;
+    const playerPoints = this.controlPoints.filter((point) => point.owner === SIDE.PLAYER).length;
+    let stanceId = "normal";
+    if (this.aiCastle.hp < this.playerCastle.hp * 0.85) stanceId = "defensive";
+    else if (aiPoints < playerPoints) stanceId = "aggressive";
+    this.selectStance({ id: stanceId }, SIDE.AI);
+    const offers = this.shop.ai?.offers || [];
+    if (offers.length === 0) return;
+
+    const draft = this.aiDraft || { front: [], mid: [], rear: [] };
+    const queued = [...draft.front, ...draft.mid, ...draft.rear].filter(Boolean);
+    const queuedRoles = queued.reduce(
+      (acc, id) => {
+        const role = UNIT_TYPES[id]?.role || "unknown";
+        acc[role] = (acc[role] || 0) + 1;
         return acc;
       },
       { frontline: 0, damage: 0, support: 0, disruptor: 0 }
     );
 
-    if (aiFrontline < 2 && this.queueUnit("guard", SIDE.AI)) return;
+    const pickOffer = (role) => offers.find((id) => UNIT_TYPES[id]?.role === role);
+    const pickAffordable = () => {
+      const affordable = offers.filter((id) => UNIT_TYPES[id]?.cost <= this.aiResources);
+      if (affordable.length === 0) return null;
+      return affordable.sort((a, b) => UNIT_TYPES[a].cost - UNIT_TYPES[b].cost)[0];
+    };
 
-    if (playerRoles.damage > playerRoles.frontline && this.queueUnit("guard", SIDE.AI)) return;
-    if (playerRoles.frontline > playerRoles.damage && this.queueUnit("charger", SIDE.AI)) return;
-    if (playerRoles.support > 0 && this.queueUnit("archer", SIDE.AI)) return;
+    const needsFrontline = queuedRoles.frontline < 1;
+    const needsSupport = queuedRoles.support < 1;
 
-    if (this.aiResources > 8 && this.queueUnit("charger", SIDE.AI)) return;
+    if (needsFrontline) {
+      const id = pickOffer("frontline");
+      if (id && this.queueUnit({ id, fromShop: true }, SIDE.AI)) return;
+    }
 
-    this.queueUnit("archer", SIDE.AI);
+    if (needsSupport) {
+      const id = pickOffer("support");
+      if (id && this.queueUnit({ id, fromShop: true }, SIDE.AI)) return;
+    }
+
+    const disruptor = pickOffer("disruptor");
+    if (disruptor && this.queueUnit({ id: disruptor, fromShop: true }, SIDE.AI)) return;
+
+    const damage = pickOffer("damage");
+    if (damage && this.queueUnit({ id: damage, fromShop: true }, SIDE.AI)) return;
+
+    const fallback = pickAffordable();
+    if (fallback) {
+      this.queueUnit({ id: fallback, fromShop: true }, SIDE.AI);
+      return;
+    }
+
+    const rerollCost = this.getRerollCost(SIDE.AI);
+    if (this.aiResources >= rerollCost + 2) {
+      this.requestShopReroll(SIDE.AI);
+    }
   }
 }
