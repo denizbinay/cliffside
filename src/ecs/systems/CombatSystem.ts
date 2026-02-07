@@ -19,12 +19,17 @@ import { ENTITY_TYPE } from "../constants";
 import type { StatusOnHit } from "../../types";
 import type { GameWorld } from "../world";
 import type { ConfigStore } from "../stores/ConfigStore";
+import { CombatEventBus } from "../events/CombatEventBus";
+import type { CombatEventContext } from "../events/combatEvents";
 
 const attackers = defineQuery([Position, Health, Combat, Faction, Target, StatusEffects, Animation, Role, EntityType]);
 
 const castles = defineQuery([Position, Health, Faction, EntityType]);
 
 export function createCombatSystem(configStore?: ConfigStore): (world: GameWorld) => GameWorld {
+  const events = new CombatEventBus();
+  registerCoreCombatHandlers(events, configStore);
+
   return function combatSystem(world: GameWorld): GameWorld {
     const entities = attackers(world);
     const castleEntities = castles(world);
@@ -50,7 +55,7 @@ export function createCombatSystem(configStore?: ConfigStore): (world: GameWorld
       if (Combat.cooldown[eid] > 0) continue;
 
       const buffMult = StatusEffects.buffTimer[eid] > 0 ? StatusEffects.buffPower[eid] : 1;
-      const damage = Combat.damage[eid] * buffMult;
+      const baseDamage = Combat.damage[eid] * buffMult;
       const targetEid = Target.entityId[eid];
 
       if (targetEid !== 0) {
@@ -58,12 +63,9 @@ export function createCombatSystem(configStore?: ConfigStore): (world: GameWorld
         const targetInRange = Math.abs(Position.x[targetEid] - Position.x[eid]) <= Combat.range[eid];
 
         if (targetAlive && targetInRange) {
-          Health.current[targetEid] = Math.max(0, Health.current[targetEid] - damage);
+          resolveAttack(world, events, eid, targetEid, baseDamage);
           Combat.cooldown[eid] = Combat.attackRate[eid];
           Animation.currentAction[eid] = ANIM_ACTION.ATTACK;
-          if (isUnit) {
-            applyStatusOnHit(world, eid, targetEid, configStore);
-          }
           continue;
         }
 
@@ -80,7 +82,7 @@ export function createCombatSystem(configStore?: ConfigStore): (world: GameWorld
         if (enemyCastleEid !== undefined && enemyCastleX !== undefined) {
           const dist = Math.abs(enemyCastleX - Position.x[eid]);
           if (dist <= COMBAT_CONFIG.castleAttackRange) {
-            Health.current[enemyCastleEid] = Math.max(0, Health.current[enemyCastleEid] - damage);
+            resolveAttack(world, events, eid, enemyCastleEid, baseDamage);
             Combat.cooldown[eid] = Combat.attackRate[eid];
             Animation.currentAction[eid] = ANIM_ACTION.ATTACK;
           }
@@ -92,16 +94,83 @@ export function createCombatSystem(configStore?: ConfigStore): (world: GameWorld
   };
 }
 
+function resolveAttack(
+  world: GameWorld,
+  events: CombatEventBus,
+  attackerEid: number,
+  targetEid: number,
+  baseDamage: number
+): void {
+  const context: CombatEventContext = {
+    world,
+    attackerEid,
+    targetEid,
+    baseDamage,
+    damage: baseDamage,
+    isCritical: false,
+    didKill: false
+  };
+
+  events.emit("beforeAttack", context);
+
+  const previousHp = Health.current[targetEid];
+  const finalDamage = Math.max(0, context.damage);
+  Health.current[targetEid] = Math.max(0, previousHp - finalDamage);
+  context.damage = finalDamage;
+  context.didKill = previousHp > 0 && Health.current[targetEid] <= 0;
+
+  events.emit("afterDamage", context);
+  events.emit("onHit", context);
+  if (context.didKill) {
+    events.emit("onKill", context);
+  }
+}
+
+function registerCoreCombatHandlers(events: CombatEventBus, configStore?: ConfigStore): void {
+  events.on("beforeAttack", (context) => {
+    if (!configStore) return;
+    const config = getAttackerConfig(context.world, context.attackerEid, configStore);
+    if (!config?.critChance) return;
+    const roll = context.world.sim.rng.nextFloat();
+    if (roll > config.critChance) return;
+
+    const multiplier = config.critMultiplier ?? 1.5;
+    context.isCritical = true;
+    context.damage = context.damage * multiplier;
+  });
+
+  events.on("onHit", (context) => {
+    if (!configStore) return;
+    applyStatusOnHit(context.world, context.attackerEid, context.targetEid, configStore);
+  });
+
+  events.on("onKill", (context) => {
+    if (!configStore) return;
+    const config = getAttackerConfig(context.world, context.attackerEid, configStore);
+    const onKill = config?.onKill;
+    if (!onKill || onKill.type !== "selfBuff") return;
+
+    StatusEffects.buffTimer[context.attackerEid] = Math.max(
+      StatusEffects.buffTimer[context.attackerEid],
+      onKill.duration
+    );
+    StatusEffects.buffPower[context.attackerEid] = Math.max(StatusEffects.buffPower[context.attackerEid], onKill.power);
+  });
+}
+
 function applyStatusOnHit(world: GameWorld, attackerEid: number, targetEid: number, configStore?: ConfigStore): void {
   if (!configStore) return;
   if (!(EntityType.value[targetEid] & ENTITY_TYPE.UNIT)) return;
-  if (!hasComponent(world, UnitConfig, attackerEid)) return;
-
-  const config = configStore.getUnitConfigByIndex(UnitConfig.typeIndex[attackerEid]);
+  const config = getAttackerConfig(world, attackerEid, configStore);
   const status = config?.statusOnHit;
   if (!status) return;
 
   applyStatusEffect(attackerEid, targetEid, status);
+}
+
+function getAttackerConfig(world: GameWorld, attackerEid: number, configStore: ConfigStore) {
+  if (!hasComponent(world, UnitConfig, attackerEid)) return null;
+  return configStore.getUnitConfigByIndex(UnitConfig.typeIndex[attackerEid]);
 }
 
 function applyStatusEffect(attackerEid: number, targetEid: number, status: StatusOnHit): void {

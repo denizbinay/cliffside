@@ -2,6 +2,7 @@ import { createGameWorld, resetGameWorld, updateWorldTime } from "../world";
 import {
   createCombatSystem,
   createCleanupSystem,
+  createControlPointSystem,
   createCooldownSystem,
   createFlashEffectSystem,
   createHealerSystem,
@@ -29,6 +30,11 @@ import { UNIT_TYPES } from "../../data/units";
 import type { GameWorld } from "../world";
 import type GameScene from "../../scenes/GameScene";
 
+interface GameSceneBridgeOptions {
+  seed?: number;
+  stepMs?: number;
+}
+
 export class GameSceneBridge {
   world: GameWorld;
   scheduler: SystemScheduler;
@@ -40,9 +46,9 @@ export class GameSceneBridge {
 
   private scene: GameScene;
 
-  constructor(scene: GameScene) {
+  constructor(scene: GameScene, options: GameSceneBridgeOptions = {}) {
     this.scene = scene;
-    this.world = createGameWorld();
+    this.world = createGameWorld(options);
     this.world.scene = scene;
     this.scheduler = new SystemScheduler();
     this.renderStore = new RenderStore();
@@ -110,6 +116,16 @@ export class GameSceneBridge {
     this.scheduler.register("status", createStatusSystem(), SYSTEM_PRIORITY.STATUS);
     this.scheduler.register("cooldown", createCooldownSystem(), SYSTEM_PRIORITY.MOVEMENT - 5);
     this.scheduler.register("targeting", createTargetingSystem(), SYSTEM_PRIORITY.AI);
+    this.scheduler.register(
+      "control-points",
+      createControlPointSystem({
+        getControlPoints: () => this.scene.controlPoints || [],
+        getControlPointEids: () => this.scene.controlPointEids || [],
+        onPointOwnerChanged: (point, previousOwner) => this.scene.onControlPointOwnerChanged?.(point, previousOwner),
+        onZoneOwnerChanged: (owner, previousOwner) => this.scene.onZoneOwnerChanged?.(owner, previousOwner)
+      }),
+      SYSTEM_PRIORITY.HEALTH + 1
+    );
     this.scheduler.register("movement", createMovementSystem(getCastleX), SYSTEM_PRIORITY.MOVEMENT);
     this.scheduler.register("combat", createCombatSystem(this.configStore), SYSTEM_PRIORITY.COMBAT);
     this.scheduler.register("healer", createHealerSystem(getCastleX), SYSTEM_PRIORITY.COMBAT + 5);

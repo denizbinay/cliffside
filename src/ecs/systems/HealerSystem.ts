@@ -14,6 +14,7 @@ import {
   Velocity
 } from "../components";
 import { ENTITY_TYPE } from "../constants";
+import { SpatialHash1D } from "../spatial/SpatialHash";
 import type { GameWorld } from "../world";
 
 const healerUnits = defineQuery([
@@ -34,10 +35,19 @@ export function createHealerSystem(
   getCastleX: (faction: number) => number | null,
   castleStopOffset: number = 40
 ): (world: GameWorld) => GameWorld {
+  const spatial = new SpatialHash1D(100);
+
   return function healerSystem(world: GameWorld): GameWorld {
     const delta = world.time.delta;
     const entities = healerUnits(world);
     const allies = allyUnits(world);
+
+    spatial.clear();
+    for (const allyEid of allies) {
+      if ((EntityType.value[allyEid] & ENTITY_TYPE.UNIT) === 0) continue;
+      if (Health.current[allyEid] <= 0) continue;
+      spatial.insert(allyEid, Position.x[allyEid]);
+    }
 
     for (const eid of entities) {
       if (!(EntityType.value[eid] & ENTITY_TYPE.UNIT)) continue;
@@ -52,16 +62,14 @@ export function createHealerSystem(
       let bestEid = 0;
       let bestMissing = 0;
 
-      for (const allyEid of allies) {
-        if (!(EntityType.value[allyEid] & ENTITY_TYPE.UNIT)) continue;
+      for (const allyEid of spatial.queryRadius(myX, range)) {
+        if (allyEid === eid) continue;
         if (Faction.value[allyEid] !== myFaction) continue;
-        if (Health.current[allyEid] <= 0) continue;
 
         const missing = Health.max[allyEid] - Health.current[allyEid];
         if (missing <= 0) continue;
 
-        const dist = Math.abs(Position.x[allyEid] - myX);
-        if (dist <= range && missing > bestMissing) {
+        if (missing > bestMissing) {
           bestMissing = missing;
           bestEid = allyEid;
         }

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { SIDE } from "../src/config/GameConfig";
 import { SHOP_CONFIG } from "../src/data/shop";
 import ShopManager from "../src/systems/ShopManager";
+import { Rng } from "../src/sim/Rng";
 
 function createMockScene() {
   return {
@@ -99,5 +100,18 @@ describe("ShopManager", () => {
       expect(unit.tier).toBeLessThanOrEqual(SHOP_CONFIG.stageTierCaps[0]);
       expect(unit.stageMin).toBeLessThanOrEqual(0);
     }
+  });
+
+  it("produces deterministic offers with the same seed", () => {
+    const seed = 123456;
+    const firstRng = new Rng(seed);
+    const secondRng = new Rng(seed);
+    const firstShop = new ShopManager(createMockScene(), () => firstRng.nextFloat());
+    const secondShop = new ShopManager(createMockScene(), () => secondRng.nextFloat());
+
+    firstShop.rollOffers(SIDE.PLAYER, 0, true);
+    secondShop.rollOffers(SIDE.PLAYER, 0, true);
+
+    expect(firstShop.getShop(SIDE.PLAYER).offers).toEqual(secondShop.getShop(SIDE.PLAYER).offers);
   });
 });

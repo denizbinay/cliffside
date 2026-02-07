@@ -22,6 +22,12 @@ export interface StatusOnHit {
   readonly strength?: number;
 }
 
+export interface OnKillEffect {
+  readonly type: "selfBuff";
+  readonly duration: number;
+  readonly power: number;
+}
+
 export interface UnitTypeConfig {
   readonly id: string;
   readonly name: string;
@@ -41,7 +47,10 @@ export interface UnitTypeConfig {
   readonly presence: number;
   readonly color: number;
   readonly healAmount?: number;
+  readonly critChance?: number;
+  readonly critMultiplier?: number;
   readonly statusOnHit?: StatusOnHit;
+  readonly onKill?: OnKillEffect;
 }
 
 export type UnitTypesMap = Record<string, UnitTypeConfig>;

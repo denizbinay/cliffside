@@ -15,12 +15,16 @@ interface ShopScene {
   events: { emit: (event: string, ...args: unknown[]) => void };
 }
 
+type RandomSource = () => number;
+
 export default class ShopManager {
   scene: ShopScene;
   shops: Record<Side, ShopState>;
+  random: RandomSource;
 
-  constructor(scene: ShopScene) {
+  constructor(scene: ShopScene, random: RandomSource = Math.random) {
     this.scene = scene;
+    this.random = random;
     this.shops = {
       [SIDE.PLAYER]: { offers: [], rerolls: 0 },
       [SIDE.AI]: { offers: [], rerolls: 0 }
@@ -51,7 +55,7 @@ export default class ShopManager {
 
   pickWeighted(units: UnitTypeConfig[]): UnitTypeConfig {
     const total = units.reduce((sum, unit) => sum + (unit.shopWeight || 1), 0);
-    let roll = Math.random() * total;
+    let roll = this.random() * total;
     for (const unit of units) {
       roll -= unit.shopWeight || 1;
       if (roll <= 0) return unit;

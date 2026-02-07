@@ -20,6 +20,7 @@ import AIController from "../systems/AIController";
 import LayoutDevTool from "../devtools/LayoutDevTool";
 import UnitDevTool from "../devtools/UnitDevTool";
 import { GameSceneBridge } from "../ecs/bridges/GameSceneBridge";
+import { SimClock } from "../sim/SimClock";
 import {
   createCastle,
   createCastleVisuals,
@@ -29,7 +30,7 @@ import {
   createUnit,
   createUnitVisuals
 } from "../ecs/factories";
-import { EntityType, Faction, Health, Position, Presence, Render, StatusEffects, FACTION } from "../ecs/components";
+import { EntityType, Faction, Health, Position, Render, StatusEffects, FACTION } from "../ecs/components";
 import { ENTITY_TYPE } from "../ecs/constants";
 import { defineQuery, removeEntity } from "bitecs";
 import { buildGhostShapes } from "../utils/ghostShapes";
@@ -46,7 +47,6 @@ import type {
   UiState
 } from "../types";
 
-const presenceUnitsQuery = defineQuery([Position, Presence, Health, Faction, EntityType]);
 const unitEntitiesQuery = defineQuery([Position, Health, EntityType, Render, Faction]);
 
 interface GhostGhost {
@@ -113,10 +113,10 @@ export default class GameScene extends Phaser.Scene {
   lastCastleHp!: { player: number; ai: number };
   matchTime!: number;
   zoneOwner!: Side | "neutral";
-  zoneCheckTimer!: number;
   abilityCooldowns!: Record<AbilityId, number>;
   ghostAlpha!: number;
   ghostFormation!: { rows: GhostRow };
+  simClock!: SimClock;
 
   _controlPoints!: ControlPoint[];
 
@@ -185,7 +185,10 @@ export default class GameScene extends Phaser.Scene {
     this.computeBoardLayout();
 
     this.bridgeVisuals = [];
-    this.ecsBridge = new GameSceneBridge(this);
+    const simSeed = this.resolveSimSeed();
+    const simStepMs = 50;
+    this.ecsBridge = new GameSceneBridge(this, { seed: simSeed, stepMs: simStepMs });
+    this.simClock = new SimClock({ stepMs: simStepMs });
     this.createBackground();
     this.createBridge();
     this.createCastles();
@@ -193,7 +196,7 @@ export default class GameScene extends Phaser.Scene {
 
     // Systems
     this.economy = new EconomySystem(this);
-    this.shopManager = new ShopManager(this);
+    this.shopManager = new ShopManager(this, () => this.ecsBridge.world.sim.rng.nextFloat());
     this.waveManager = new WaveManager(this);
     this.aiController = new AIController(this);
 
@@ -218,7 +221,6 @@ export default class GameScene extends Phaser.Scene {
     this.matchTime = 0;
 
     this.zoneOwner = "neutral";
-    this.zoneCheckTimer = 0;
 
     this.abilityCooldowns = {
       healWave: 0,
@@ -304,6 +306,24 @@ export default class GameScene extends Phaser.Scene {
     this._controlPoints = v;
   }
 
+  resolveSimSeed(): number {
+    if (typeof window !== "undefined") {
+      try {
+        const query = new URLSearchParams(window.location.search).get("seed");
+        if (query !== null) {
+          const parsed = Number(query);
+          if (Number.isFinite(parsed)) {
+            return parsed >>> 0;
+          }
+        }
+      } catch {
+        // ignore invalid query
+      }
+    }
+
+    return Math.floor(Date.now()) >>> 0;
+  }
+
   resolveInitialCastleVariantIndex(): number {
     const max = CASTLE_VARIANTS.length;
     if (typeof window !== "undefined") {
@@ -342,8 +362,6 @@ export default class GameScene extends Phaser.Scene {
   }
 
   update(_: number, deltaMs: number): void {
-    const delta = deltaMs / 1000;
-
     this.layoutDevTool.handleInput();
     this.unitDevTool.handleInput();
     if (this.layoutDevTool.enabled) {
@@ -353,10 +371,27 @@ export default class GameScene extends Phaser.Scene {
 
     if (this.isGameOver) return;
 
-    this.ecsBridge.update(delta, this.time.now);
+    this.simClock.pushFrame(deltaMs);
+    let simulated = false;
+    while (this.simClock.consumeTick()) {
+      this.runSimulationTick();
+      simulated = true;
+    }
+
+    if (simulated) {
+      this.updateGhostFormation();
+      this.refreshControlPointVisuals();
+      this.checkGameOver();
+      this.updateCastleHud();
+    }
+    this.emitUiState();
+  }
+
+  private runSimulationTick(): void {
+    const delta = this.simClock.stepSeconds;
+    this.ecsBridge.update(delta, this.simClock.elapsedMs);
 
     this.matchTime += delta;
-
     this.economy.update(delta);
 
     this.abilityCooldowns.healWave = Math.max(0, this.abilityCooldowns.healWave - delta);
@@ -374,17 +409,6 @@ export default class GameScene extends Phaser.Scene {
       this.waveManager.waveCountdown += this.waveManager.getWaveInterval(this.matchTime);
       this.waveManager.waveLocked = this.waveManager.waveCountdown <= WAVE_CONFIG.lockSeconds;
     }
-    this.updateGhostFormation();
-
-    this.zoneCheckTimer += delta;
-    if (this.zoneCheckTimer >= CONTROL_POINT_CONFIG.checkInterval) {
-      this.zoneCheckTimer = 0;
-      this.updateControlPoints();
-    }
-
-    this.checkGameOver();
-    this.updateCastleHud();
-    this.emitUiState();
   }
 
   // --- Background & Bridge ---
@@ -856,59 +880,8 @@ export default class GameScene extends Phaser.Scene {
 
   // --- Control Points ---
 
-  updateControlPoints(): void {
-    let playerCount = 0;
-    let aiCount = 0;
-    const world = this.ecsBridge.world;
-    const unitEntities = presenceUnitsQuery(world);
-
+  refreshControlPointVisuals(): void {
     for (const point of this.controlPoints) {
-      let playerPresence = 0;
-      let aiPresence = 0;
-
-      for (const eid of unitEntities) {
-        if (!(EntityType.value[eid] & ENTITY_TYPE.UNIT)) continue;
-        if (Health.current[eid] <= 0) continue;
-        if (!Phaser.Geom.Rectangle.Contains(point.zone, Position.x[eid], Position.y[eid])) continue;
-
-        const presence = Presence.baseValue[eid] * Presence.multiplier[eid];
-        if (Faction.value[eid] === FACTION.PLAYER) {
-          playerPresence += presence;
-        } else if (Faction.value[eid] === FACTION.AI) {
-          aiPresence += presence;
-        }
-      }
-
-      const diff = playerPresence - aiPresence;
-      if (Math.abs(diff) <= CONTROL_POINT_CONFIG.contestDeadzone) {
-        point.progress *= CONTROL_POINT_CONFIG.decayRate;
-      } else {
-        point.progress = Phaser.Math.Clamp(point.progress + diff * CONTROL_POINT_CONFIG.progressRate, -1, 1);
-      }
-
-      const prevOwner = point.owner;
-      if (point.progress >= CONTROL_POINT_CONFIG.ownershipThreshold) point.owner = SIDE.PLAYER;
-      else if (point.progress <= -CONTROL_POINT_CONFIG.ownershipThreshold) point.owner = SIDE.AI;
-      else point.owner = "neutral";
-
-      if (point.owner !== prevOwner) {
-        this.events.emit("log", { type: "point", index: point.index, owner: point.owner });
-        const pulseTargets: (Phaser.GameObjects.Arc | Phaser.GameObjects.Image)[] = [point.marker];
-        if (point.rune) pulseTargets.push(point.rune);
-        if (point.glow) pulseTargets.push(point.glow);
-        this.tweens.add({ targets: pulseTargets, alpha: 0.95, duration: 140, yoyo: true });
-      }
-
-      if (point.owner === SIDE.PLAYER) playerCount += 1;
-      if (point.owner === SIDE.AI) aiCount += 1;
-
-      const pointIndex = point.index;
-      const pointEid = this.controlPointEids?.[pointIndex];
-      if (pointEid) {
-        Faction.value[pointEid] =
-          point.owner === SIDE.PLAYER ? FACTION.PLAYER : point.owner === SIDE.AI ? FACTION.AI : FACTION.NEUTRAL;
-      }
-
       const tint = point.owner === SIDE.PLAYER ? 0x6fa3d4 : point.owner === SIDE.AI ? 0xb36a6a : 0x3a3f4f;
       point.marker.setFillStyle(tint, 0.65);
       const coreTint = point.owner === SIDE.PLAYER ? 0x9ec9f0 : point.owner === SIDE.AI ? 0xf0b5b5 : 0x7b8598;
@@ -922,13 +895,19 @@ export default class GameScene extends Phaser.Scene {
         point.glow.setAlpha(point.owner === "neutral" ? 0.35 : 0.6);
       }
     }
+  }
 
-    let newOwner: Side | "neutral" = "neutral";
-    if (playerCount > aiCount) newOwner = SIDE.PLAYER;
-    if (aiCount > playerCount) newOwner = SIDE.AI;
+  onControlPointOwnerChanged(point: ControlPoint, _previousOwner: Side | "neutral"): void {
+    this.events.emit("log", { type: "point", index: point.index, owner: point.owner });
+    const pulseTargets: (Phaser.GameObjects.Arc | Phaser.GameObjects.Image)[] = [point.marker];
+    if (point.rune) pulseTargets.push(point.rune);
+    if (point.glow) pulseTargets.push(point.glow);
+    this.tweens.add({ targets: pulseTargets, alpha: 0.95, duration: 140, yoyo: true });
+  }
 
-    if (newOwner !== this.zoneOwner) {
-      this.zoneOwner = newOwner;
+  onZoneOwnerChanged(owner: Side | "neutral", _previousOwner: Side | "neutral"): void {
+    if (owner !== this.zoneOwner) {
+      this.zoneOwner = owner;
       this.events.emit("zone-update", this.zoneOwner);
       this.events.emit("log", { type: "zone", owner: this.zoneOwner });
       this.cameras.main.shake(CONTROL_POINT_CONFIG.zoneShakeDuration, CONTROL_POINT_CONFIG.zoneShakeIntensity);
