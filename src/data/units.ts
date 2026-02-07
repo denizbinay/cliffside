@@ -17,7 +17,6 @@ import { adeptConfig } from "./units/adept";
 import { warderConfig } from "./units/warder";
 import { sageConfig } from "./units/sage";
 import { oracleConfig } from "./units/oracle";
-import { chargerConfig } from "./units/charger";
 import { saboteurConfig } from "./units/saboteur";
 import { hammererConfig } from "./units/hammerer";
 import { lancerConfig } from "./units/lancer";
@@ -41,7 +40,6 @@ export const UNIT_TYPES: UnitTypesMap = {
   warder: warderConfig,
   sage: sageConfig,
   oracle: oracleConfig,
-  charger: chargerConfig,
   saboteur: saboteurConfig,
   hammerer: hammererConfig,
   lancer: lancerConfig

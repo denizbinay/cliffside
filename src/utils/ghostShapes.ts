@@ -31,13 +31,6 @@ export function buildGhostShapes(
     shapes.push(body, halo);
     return shapes;
   }
-  if (typeId === "charger") {
-    const body = scene.add.triangle(0, 0, -size * 0.6, size * 0.5, size * 0.6, size * 0.5, 0, -size * 0.6, color);
-    body.setStrokeStyle(2, 0x1c1f27, 1);
-    const horn = scene.add.rectangle(0, -size * 0.1, size * 0.6, size * 0.12, 0xf0d39a);
-    shapes.push(body, horn);
-    return shapes;
-  }
 
   const body = scene.add.rectangle(0, 0, size, size, color).setStrokeStyle(2, 0x1c1f27, 1);
   shapes.push(body);

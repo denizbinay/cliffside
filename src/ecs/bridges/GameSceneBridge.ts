@@ -92,7 +92,7 @@ export class GameSceneBridge {
       if (!eid) return null;
       return this.scene.getEntityX(eid);
     };
-    const resolveAnimKey = (eid: number, action: string): string | null => {
+    const resolveAnimKey = (eid: number, action: string): { key: string; isFallback: boolean } | null => {
       const unitConfig = this.configStore.getUnitConfigByIndex(UnitConfig.typeIndex[eid]);
       if (!unitConfig) return null;
 
@@ -109,12 +109,82 @@ export class GameSceneBridge {
         const animDef = profile.actions[candidate];
         if (!animDef?.key) continue;
         if (this.scene.anims.exists(animDef.key)) {
-          return animDef.key;
+          return {
+            key: animDef.key,
+            isFallback: candidate !== action
+          };
         }
       }
 
       return null;
     };
+
+    const playFallbackVfx = (eid: number, action: string): void => {
+      const storeIndex = Render.storeIndex[eid];
+      if (!storeIndex) return;
+      const renderData = this.renderStore.get(storeIndex);
+      if (!renderData) return;
+
+      const mainSprite = renderData.mainSprite;
+      const container = renderData.container;
+
+      let effectiveAction = action;
+      if (action === "attack") {
+        const unitConfig = this.configStore.getUnitConfigByIndex(UnitConfig.typeIndex[eid]);
+        if (unitConfig) {
+          if (unitConfig.healAmount && unitConfig.healAmount > 0) {
+            effectiveAction = "heal";
+          } else if (unitConfig.tags.includes("magic") || unitConfig.tags.includes("ranged_magic")) {
+            effectiveAction = "magic";
+          }
+        }
+      }
+
+      switch (effectiveAction) {
+        case "attack":
+          // Lunge forward/back + Flash White
+          if (mainSprite) {
+            this.scene.tweens.add({
+              targets: mainSprite,
+              x: mainSprite.flipX ? -15 : 15,
+              yoyo: true,
+              duration: 100,
+              ease: "Quad.easeInOut"
+            });
+            mainSprite.setTintFill(0xffffff);
+            this.scene.time.delayedCall(100, () => mainSprite.clearTint());
+          }
+          break;
+        case "magic":
+        case "heal":
+          // Pulse scale + Flash Cyan/Green
+          if (mainSprite) {
+            const originalScaleX = mainSprite.scaleX;
+            const originalScaleY = mainSprite.scaleY;
+            this.scene.tweens.add({
+              targets: mainSprite,
+              scaleX: originalScaleX * 1.2,
+              scaleY: originalScaleY * 1.2,
+              yoyo: true,
+              duration: 150
+            });
+            const color = effectiveAction === "heal" ? 0x00ff00 : 0x00ffff;
+            mainSprite.setTintFill(color);
+            this.scene.time.delayedCall(150, () => mainSprite.clearTint());
+          }
+          break;
+        case "death":
+          // Fade out
+          this.scene.tweens.add({
+            targets: container,
+            alpha: 0,
+            duration: 500,
+            ease: "Power2"
+          });
+          break;
+      }
+    };
+
     const onCleanup = (eid: number): boolean | void => {
       const storeIndex = Render.storeIndex[eid];
       if (storeIndex) {
@@ -163,7 +233,7 @@ export class GameSceneBridge {
     this.scheduler.register("status-dots", createStatusDotSystem(this.renderStore), SYSTEM_PRIORITY.RENDER + 2);
     this.scheduler.register(
       "animation",
-      createAnimationSystem(this.renderStore, resolveAnimKey),
+      createAnimationSystem(this.renderStore, resolveAnimKey, playFallbackVfx),
       SYSTEM_PRIORITY.RENDER + 3
     );
     this.scheduler.register("spawn-effects", createSpawnEffectSystem(this.renderStore), SYSTEM_PRIORITY.RENDER + 4);

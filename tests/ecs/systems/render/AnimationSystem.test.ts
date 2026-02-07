@@ -43,8 +43,9 @@ describe("AnimationSystem", () => {
     Animation.locked[eid] = 0;
     Animation.lockUntil[eid] = 0;
 
-    const resolveAnimKey = vi.fn(() => "unit_run");
-    const system = createAnimationSystem(renderStore, resolveAnimKey);
+    const resolveAnimKey = vi.fn(() => ({ key: "unit_run", isFallback: false }));
+    const playFallbackVfx = vi.fn();
+    const system = createAnimationSystem(renderStore, resolveAnimKey, playFallbackVfx);
     system(world);
     system(world);
 

@@ -13,9 +13,15 @@ const ACTION_TO_ANIM: Record<number, string> = {
   [ANIM_ACTION.DEATH]: "death"
 };
 
+export interface AnimationResult {
+  key: string;
+  isFallback: boolean;
+}
+
 export function createAnimationSystem(
   renderStore: RenderStore,
-  resolveAnimKey: (eid: number, action: string) => string | null
+  resolveAnimKey: (eid: number, action: string) => AnimationResult | null,
+  playFallbackVfx: (eid: number, action: string) => void
 ): (world: GameWorld) => GameWorld {
   const lastAction = new Map<number, number>();
 
@@ -39,9 +45,14 @@ export function createAnimationSystem(
       lastAction.set(eid, action);
 
       const actionName = ACTION_TO_ANIM[action] ?? "idle";
-      const animKey = resolveAnimKey(eid, actionName);
-      if (animKey) {
-        renderData.mainSprite.play(animKey, true);
+      const result = resolveAnimKey(eid, actionName);
+
+      if (result) {
+        renderData.mainSprite.play(result.key, true);
+
+        if (result.isFallback) {
+          playFallbackVfx(eid, actionName);
+        }
       }
     }
 
