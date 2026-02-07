@@ -18,7 +18,7 @@ import { applyKnockback, applyPull, startDash, blink } from "./Movement";
 import { Position } from "../ecs/components/Position";
 import { activeEffectsStore } from "../ecs/stores/ActiveEffectsStore";
 import { createActiveEffect, type EffectDef } from "./EffectSystem";
-import { statModifierStore, STAT, MODIFIER_TYPE } from "./Stats";
+import { statModifierStore, STAT, MODIFIER_TYPE, type StatKey, type ModifierType } from "./Stats";
 
 export function registerStandardEffectHandlers(): void {
   // ── Damage & Heal ──────────────────────────────────────────────────
@@ -87,6 +87,28 @@ export function registerStandardEffectHandlers(): void {
         tag: "buff_generic"
       });
     }
+  });
+
+  registerEffectHandler(EFFECT_KIND.APPLY_STAT_MOD, (ctx: EffectContext) => {
+    if (ctx.stage !== EFFECT_STAGE.ON_APPLY && ctx.stage !== EFFECT_STAGE.ON_REFRESH) return;
+
+    const payload = ctx.effect.payload as { stat: StatKey; type: ModifierType };
+    if (!payload || !payload.stat || !payload.type) return;
+
+    const duration = ctx.effect.duration ?? 5;
+    const value = ctx.effect.value ?? 0;
+    const tag = ctx.effect.id || `stat_mod_${payload.stat}`;
+
+    statModifierStore.removeByTag(ctx.targetEid, tag);
+
+    statModifierStore.add(ctx.targetEid, {
+      stat: payload.stat,
+      type: payload.type,
+      value: value,
+      sourceEid: ctx.sourceEid,
+      duration: duration,
+      tag: tag
+    });
   });
 
   registerEffectHandler(EFFECT_KIND.TRIGGER_ON_HIT, (ctx: EffectContext) => {

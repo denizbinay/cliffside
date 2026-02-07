@@ -24,6 +24,7 @@ export const EFFECT_KIND = {
   APPLY_SLOW: "applySlow",
   APPLY_BUFF: "applyBuff",
   APPLY_SHIELD: "applyShield",
+  APPLY_STAT_MOD: "applyStatMod",
 
   // Resource manipulation
   RESTORE_MANA: "restoreMana",
