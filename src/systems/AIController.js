@@ -1,39 +1,75 @@
+/**
+ * AIController - Handles AI decision making.
+ * Refactored to use GameContext instead of Scene.
+ */
+
 import { UNIT_TYPES } from "../data/units.js";
 import { SIDE, AI_CONFIG } from "../config/GameConfig.js";
+import { isCastleAlive } from "../entities/CastleData.js";
 
 export default class AIController {
-  constructor(scene) {
-    this.scene = scene;
+  /**
+   * @param {GameContext} ctx - The game context
+   */
+  constructor(ctx) {
+    this.ctx = ctx;
+    this.state = ctx.state;
+    this.events = ctx.events;
+
+    this.decisionTimer = 0;
   }
 
-  setup() {
-    this.scene.time.addEvent({
-      delay: AI_CONFIG.decisionInterval,
-      loop: true,
-      callback: () => this.decide()
-    });
+  /**
+   * Update AI - called each frame.
+   * @param {number} delta - Delta time in seconds
+   */
+  update(delta) {
+    if (this.state.isGameOver) return;
+
+    this.decisionTimer += delta * 1000; // Convert to ms
+
+    if (this.decisionTimer >= AI_CONFIG.decisionInterval) {
+      this.decisionTimer = 0;
+      this.decide();
+    }
   }
 
+  /**
+   * Make a decision about what to do.
+   */
   decide() {
-    const { waveManager, shopManager, economy } = this.scene;
-    if (this.scene.isGameOver) return;
-    if (waveManager.waveLocked) return;
+    const waveManager = this.ctx.getSystem("wave");
+    const shopManager = this.ctx.getSystem("shop");
+    const economy = this.ctx.getSystem("economy");
 
-    const aiPoints = this.scene.controlPoints.filter((point) => point.owner === SIDE.AI).length;
-    const playerPoints = this.scene.controlPoints.filter((point) => point.owner === SIDE.PLAYER).length;
+    if (!waveManager || !shopManager || !economy) return;
+    if (this.state.isGameOver) return;
+    if (this.state.waveLocked) return;
 
+    const controlPoints = this.state.getControlPoints();
+    const aiPoints = controlPoints.filter((point) => point.owner === SIDE.AI).length;
+    const playerPoints = controlPoints.filter((point) => point.owner === SIDE.PLAYER).length;
+
+    const playerCastle = this.state.getCastle(SIDE.PLAYER);
+    const aiCastle = this.state.getCastle(SIDE.AI);
+
+    // Determine stance
     let stanceId = "normal";
-    if (this.scene.aiCastle.hp < this.scene.playerCastle.hp * AI_CONFIG.defensiveHpThreshold) {
-      stanceId = "defensive";
-    } else if (aiPoints < playerPoints) {
-      stanceId = "aggressive";
+    if (aiCastle && playerCastle) {
+      if (aiCastle.hp < playerCastle.hp * AI_CONFIG.defensiveHpThreshold) {
+        stanceId = "defensive";
+      } else if (aiPoints < playerPoints) {
+        stanceId = "aggressive";
+      }
     }
     waveManager.selectStance({ id: stanceId }, SIDE.AI);
 
+    // Get available offers
     const offers = (shopManager.getShop(SIDE.AI)?.offers || []).filter(Boolean);
     if (offers.length === 0) return;
 
-    const draft = waveManager.aiDraft || { front: [], mid: [], rear: [] };
+    // Check current draft
+    const draft = waveManager.getDraft(SIDE.AI);
     const queued = [...draft.front, ...draft.mid, ...draft.rear].filter(Boolean);
     const queuedRoles = queued.reduce(
       (acc, id) => {
@@ -44,10 +80,12 @@ export default class AIController {
       { frontline: 0, damage: 0, support: 0, disruptor: 0 }
     );
 
-    const stageIndex = waveManager.getStageIndex(this.scene.matchTime || 0);
+    const stageIndex = waveManager.getStageIndex(this.state.matchTime || 0);
+    const aiResources = this.state.getResources(SIDE.AI);
+
     const pickOffer = (role) => offers.find((id) => UNIT_TYPES[id]?.role === role);
     const pickAffordable = () => {
-      const affordable = offers.filter((id) => UNIT_TYPES[id]?.cost <= economy.aiResources);
+      const affordable = offers.filter((id) => UNIT_TYPES[id]?.cost <= aiResources);
       if (affordable.length === 0) return null;
       return affordable.sort((a, b) => UNIT_TYPES[a].cost - UNIT_TYPES[b].cost)[0];
     };
@@ -55,21 +93,30 @@ export default class AIController {
     const needsFrontline = queuedRoles.frontline < 1;
     const needsSupport = queuedRoles.support < 1;
 
+    // Priority: Frontline > Support > Disruptor > Damage > Affordable > Reroll
     if (needsFrontline) {
       const id = pickOffer("frontline");
-      if (id && waveManager.queueUnit({ id, fromShop: true }, SIDE.AI, economy, shopManager, stageIndex)) return;
+      if (id && waveManager.queueUnit({ id, fromShop: true }, SIDE.AI, economy, shopManager, stageIndex)) {
+        return;
+      }
     }
 
     if (needsSupport) {
       const id = pickOffer("support");
-      if (id && waveManager.queueUnit({ id, fromShop: true }, SIDE.AI, economy, shopManager, stageIndex)) return;
+      if (id && waveManager.queueUnit({ id, fromShop: true }, SIDE.AI, economy, shopManager, stageIndex)) {
+        return;
+      }
     }
 
     const disruptor = pickOffer("disruptor");
-    if (disruptor && waveManager.queueUnit({ id: disruptor, fromShop: true }, SIDE.AI, economy, shopManager, stageIndex)) return;
+    if (disruptor && waveManager.queueUnit({ id: disruptor, fromShop: true }, SIDE.AI, economy, shopManager, stageIndex)) {
+      return;
+    }
 
     const damage = pickOffer("damage");
-    if (damage && waveManager.queueUnit({ id: damage, fromShop: true }, SIDE.AI, economy, shopManager, stageIndex)) return;
+    if (damage && waveManager.queueUnit({ id: damage, fromShop: true }, SIDE.AI, economy, shopManager, stageIndex)) {
+      return;
+    }
 
     const fallback = pickAffordable();
     if (fallback) {
@@ -77,8 +124,9 @@ export default class AIController {
       return;
     }
 
+    // Consider rerolling
     const rerollCost = shopManager.getRerollCost(SIDE.AI);
-    if (economy.aiResources >= rerollCost + AI_CONFIG.rerollSafetyBuffer) {
+    if (aiResources >= rerollCost + AI_CONFIG.rerollSafetyBuffer) {
       shopManager.requestReroll(SIDE.AI, economy, stageIndex);
     }
   }

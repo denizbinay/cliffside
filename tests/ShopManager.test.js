@@ -2,20 +2,21 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { SIDE } from "../src/config/GameConfig.js";
 import { SHOP_CONFIG } from "../src/data/shop.js";
 import ShopManager from "../src/systems/ShopManager.js";
+import GameContext from "../src/core/GameContext.js";
 
-function createMockScene() {
-  return {
-    isGameOver: false,
-    waveLocked: false,
-    events: { emit() {} }
-  };
+function createMockContext() {
+  const ctx = new GameContext();
+  ctx.state.setControlPoints([]);
+  return ctx;
 }
 
 describe("ShopManager", () => {
   let shop;
+  let ctx;
 
   beforeEach(() => {
-    shop = new ShopManager(createMockScene());
+    ctx = createMockContext();
+    shop = new ShopManager(ctx);
   });
 
   it("initializes with empty offers for both sides", () => {
