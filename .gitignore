@@ -11,3 +11,10 @@ pnpm-lock.yaml
 yarn.lock
 *.swp
 *.swo
+
+# Windows NTFS alternate data stream markers
+*Zone.Identifier
+
+# Raw source images (pre-processed originals)
+*_raw.jpg
+*_raw.png

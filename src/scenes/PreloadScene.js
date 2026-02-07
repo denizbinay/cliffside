@@ -98,7 +98,6 @@ export default class PreloadScene extends Phaser.Scene {
     this.createUnitAnimations();
 
     this.scene.start("Game");
-    this.scene.start("UI");
   }
 
   createTurretHeadKeyedTexture() {
