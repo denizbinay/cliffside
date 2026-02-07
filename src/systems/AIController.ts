@@ -1,12 +1,31 @@
-import { UNIT_TYPES } from "../data/units.js";
-import { SIDE, AI_CONFIG } from "../config/GameConfig.js";
+import { UNIT_TYPES } from "../data/units";
+import { SIDE, AI_CONFIG } from "../config/GameConfig";
+import type Castle from "../entities/Castle";
+import type { Side, ControlPoint } from "../types";
+import type EconomySystem from "./EconomySystem";
+import type ShopManager from "./ShopManager";
+import type WaveManager from "./WaveManager";
+
+interface AIScene {
+  isGameOver: boolean;
+  matchTime: number;
+  aiCastle: Castle;
+  playerCastle: Castle;
+  controlPoints: ControlPoint[];
+  waveManager: WaveManager;
+  shopManager: ShopManager;
+  economy: EconomySystem;
+  time: Phaser.Time.Clock;
+}
 
 export default class AIController {
-  constructor(scene) {
+  scene: AIScene;
+
+  constructor(scene: AIScene) {
     this.scene = scene;
   }
 
-  setup() {
+  setup(): void {
     this.scene.time.addEvent({
       delay: AI_CONFIG.decisionInterval,
       loop: true,
@@ -14,7 +33,7 @@ export default class AIController {
     });
   }
 
-  decide() {
+  decide(): void {
     const { waveManager, shopManager, economy } = this.scene;
     if (this.scene.isGameOver) return;
     if (waveManager.waveLocked) return;
@@ -30,12 +49,12 @@ export default class AIController {
     }
     waveManager.selectStance({ id: stanceId }, SIDE.AI);
 
-    const offers = (shopManager.getShop(SIDE.AI)?.offers || []).filter(Boolean);
+    const offers = (shopManager.getShop(SIDE.AI)?.offers || []).filter(Boolean) as string[];
     if (offers.length === 0) return;
 
     const draft = waveManager.aiDraft || { front: [], mid: [], rear: [] };
-    const queued = [...draft.front, ...draft.mid, ...draft.rear].filter(Boolean);
-    const queuedRoles = queued.reduce(
+    const queued = [...draft.front, ...draft.mid, ...draft.rear].filter(Boolean) as string[];
+    const queuedRoles: Record<string, number> = queued.reduce<Record<string, number>>(
       (acc, id) => {
         const role = UNIT_TYPES[id]?.role || "unknown";
         acc[role] = (acc[role] || 0) + 1;
@@ -45,8 +64,8 @@ export default class AIController {
     );
 
     const stageIndex = waveManager.getStageIndex(this.scene.matchTime || 0);
-    const pickOffer = (role) => offers.find((id) => UNIT_TYPES[id]?.role === role);
-    const pickAffordable = () => {
+    const pickOffer = (role: string): string | undefined => offers.find((id) => UNIT_TYPES[id]?.role === role);
+    const pickAffordable = (): string | null => {
       const affordable = offers.filter((id) => UNIT_TYPES[id]?.cost <= economy.aiResources);
       if (affordable.length === 0) return null;
       return affordable.sort((a, b) => UNIT_TYPES[a].cost - UNIT_TYPES[b].cost)[0];
@@ -66,10 +85,15 @@ export default class AIController {
     }
 
     const disruptor = pickOffer("disruptor");
-    if (disruptor && waveManager.queueUnit({ id: disruptor, fromShop: true }, SIDE.AI, economy, shopManager, stageIndex)) return;
+    if (
+      disruptor &&
+      waveManager.queueUnit({ id: disruptor, fromShop: true }, SIDE.AI, economy, shopManager, stageIndex)
+    )
+      return;
 
     const damage = pickOffer("damage");
-    if (damage && waveManager.queueUnit({ id: damage, fromShop: true }, SIDE.AI, economy, shopManager, stageIndex)) return;
+    if (damage && waveManager.queueUnit({ id: damage, fromShop: true }, SIDE.AI, economy, shopManager, stageIndex))
+      return;
 
     const fallback = pickAffordable();
     if (fallback) {

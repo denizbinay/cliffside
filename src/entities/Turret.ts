@@ -1,7 +1,32 @@
-import { SIDE, TURRET_CONFIG } from "../config/GameConfig.js";
+import { SIDE, TURRET_CONFIG } from "../config/GameConfig";
+import type { Side, LayoutTurretProfile } from "../types";
+import type Unit from "./Unit";
 
 export default class Turret {
-  constructor(scene, side, x, y, metrics = {}) {
+  scene: Phaser.Scene;
+  side: Side;
+  x: number;
+  y: number;
+  maxHp: number;
+  hp: number;
+  range: number;
+  dmg: number;
+  attackRate: number;
+  attackCooldown: number;
+  status: { stun: number };
+  earlyWaveShieldWaves: number;
+  earlyWaveDamageMult: number;
+  earlyWaveMinHpRatio: number;
+  base: Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle | null;
+  baseIsSprite: boolean;
+  baseTeamTint?: number;
+  body: Phaser.GameObjects.Container;
+  healthBarOffsetX: number;
+  healthBarOffsetY: number;
+  healthBar: Phaser.GameObjects.Rectangle;
+  healthFill: Phaser.GameObjects.Rectangle;
+
+  constructor(scene: Phaser.Scene, side: Side, x: number, y: number, metrics: Partial<LayoutTurretProfile> = {}) {
     this.scene = scene;
     this.side = side;
     this.x = x;
@@ -25,8 +50,8 @@ export default class Turret {
     const turretHeadKey = scene.textures.exists("turret_head_keyed")
       ? "turret_head_keyed"
       : scene.textures.exists("turret_head")
-      ? "turret_head"
-      : null;
+        ? "turret_head"
+        : null;
     const hasTurretHead = Boolean(turretHeadKey);
     const showBase = metrics.showBase === true;
     const baseWidth = metrics.baseWidth || 44;
@@ -43,8 +68,8 @@ export default class Turret {
       this.baseIsSprite = true;
       this.baseTeamTint = teamTint;
     } else if (showBase) {
-      const base = scene
-        .add.rectangle(0, 0, 36, 26, side === SIDE.PLAYER ? 0x5a6b7a : 0x7a5a5a)
+      const base = scene.add
+        .rectangle(0, 0, 36, 26, side === SIDE.PLAYER ? 0x5a6b7a : 0x7a5a5a)
         .setStrokeStyle(2, 0x1c1f27, 1);
       const tower = scene.add.rectangle(0, -16, 24, 22, 0x2b303b).setStrokeStyle(2, 0x1c1f27, 1);
       this.body.add([base, tower]);
@@ -53,14 +78,12 @@ export default class Turret {
     }
 
     const headY = showBase ? -24 : -headHeight * 0.5;
-    if (hasTurretHead) {
+    if (hasTurretHead && turretHeadKey) {
       const head = scene.add.image(0, headY, turretHeadKey).setDisplaySize(headWidth, headHeight);
       head.setFlipX(side === SIDE.AI);
       this.body.add(head);
     } else {
-      const head = scene
-        .add.triangle(0, headY - 6, -8, 6, 8, 6, 0, -6, 0xe2d2b3)
-        .setStrokeStyle(1, 0x1c1f27, 1);
+      const head = scene.add.triangle(0, headY - 6, -8, 6, 8, 6, 0, -6, 0xe2d2b3).setStrokeStyle(1, 0x1c1f27, 1);
       this.body.add(head);
     }
 
@@ -68,9 +91,17 @@ export default class Turret {
     const healthBarHeight = metrics.hpHeight || 5;
     const turretTopY = Math.min(showBase ? -baseHeight * 0.5 : Number.POSITIVE_INFINITY, headY - headHeight * 0.5);
     this.healthBarOffsetX = metrics.hpOffsetX || 0;
-    this.healthBarOffsetY = Number.isFinite(metrics.hpOffsetY) ? metrics.hpOffsetY : turretTopY - healthBarHeight * 1.4;
+    this.healthBarOffsetY = Number.isFinite(metrics.hpOffsetY!)
+      ? metrics.hpOffsetY!
+      : turretTopY - healthBarHeight * 1.4;
 
-    this.healthBar = scene.add.rectangle(x + this.healthBarOffsetX, y + this.healthBarOffsetY, healthBarWidth, healthBarHeight, 0x2d2f38);
+    this.healthBar = scene.add.rectangle(
+      x + this.healthBarOffsetX,
+      y + this.healthBarOffsetY,
+      healthBarWidth,
+      healthBarHeight,
+      0x2d2f38
+    );
     this.healthFill = scene.add.rectangle(
       x + this.healthBarOffsetX,
       y + this.healthBarOffsetY,
@@ -82,11 +113,11 @@ export default class Turret {
     this.healthFill.setDepth(4);
   }
 
-  isAlive() {
+  isAlive(): boolean {
     return this.hp > 0;
   }
 
-  update(delta, enemies) {
+  update(delta: number, enemies: Unit[]): void {
     if (!this.isAlive()) return;
     this.attackCooldown = Math.max(0, this.attackCooldown - delta);
     this.status.stun = Math.max(0, this.status.stun - delta);
@@ -101,8 +132,8 @@ export default class Turret {
     }
   }
 
-  findTarget(enemies) {
-    let closest = null;
+  findTarget(enemies: Unit[]): Unit | null {
+    let closest: Unit | null = null;
     let minDist = Infinity;
     for (const enemy of enemies) {
       if (!enemy.isAlive()) continue;
@@ -115,9 +146,10 @@ export default class Turret {
     return closest;
   }
 
-  fireArrow(tx, ty) {
+  fireArrow(tx: number, ty: number): void {
     const arrow = this.scene.add.rectangle(
-      this.x, this.y - 22,
+      this.x,
+      this.y - 22,
       TURRET_CONFIG.arrowSize.width,
       TURRET_CONFIG.arrowSize.height,
       0xf3ead7
@@ -133,8 +165,8 @@ export default class Turret {
     });
   }
 
-  takeDamage(amount) {
-    const waveNumber = this.scene.waveNumber || 0;
+  takeDamage(amount: number): void {
+    const waveNumber = (this.scene as unknown as { waveNumber?: number }).waveNumber || 0;
     if (waveNumber <= this.earlyWaveShieldWaves) {
       const reduced = amount * this.earlyWaveDamageMult;
       const minHp = this.maxHp * this.earlyWaveMinHpRatio;
@@ -149,30 +181,30 @@ export default class Turret {
     }
   }
 
-  applyStatus(status) {
+  applyStatus(status: { type: string; duration?: number }): void {
     if (status.type === "stun") {
-      this.status.stun = Math.max(this.status.stun, status.duration);
+      this.status.stun = Math.max(this.status.stun, status.duration || 0);
     }
   }
 
-  flash(color) {
+  flash(color: number): void {
     if (!this.base) return;
     if (this.baseIsSprite) {
-      this.base.setTintFill(color);
+      (this.base as Phaser.GameObjects.Image).setTintFill(color);
     } else {
-      this.base.setFillStyle(color);
+      (this.base as Phaser.GameObjects.Rectangle).setFillStyle(color);
     }
     this.scene.time.delayedCall(TURRET_CONFIG.flashDuration, () => {
       if (!this.isAlive()) return;
       if (this.baseIsSprite) {
-        this.base.setTint(this.baseTeamTint);
+        (this.base as Phaser.GameObjects.Image).setTint(this.baseTeamTint!);
       } else {
-        this.base.setFillStyle(this.side === SIDE.PLAYER ? 0x5a6b7a : 0x7a5a5a);
+        (this.base as Phaser.GameObjects.Rectangle).setFillStyle(this.side === SIDE.PLAYER ? 0x5a6b7a : 0x7a5a5a);
       }
     });
   }
 
-  syncBars() {
+  syncBars(): void {
     this.healthBar.x = this.x + this.healthBarOffsetX;
     this.healthFill.x = this.x + this.healthBarOffsetX;
     this.healthBar.y = this.y + this.healthBarOffsetY;
@@ -182,7 +214,7 @@ export default class Turret {
     this.healthFill.x = this.healthBar.x - (this.healthBar.width - this.healthFill.width) / 2;
   }
 
-  destroy() {
+  destroy(): void {
     this.body.destroy();
     this.healthBar.destroy();
     this.healthFill.destroy();

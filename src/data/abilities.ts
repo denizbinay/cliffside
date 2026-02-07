@@ -1,4 +1,6 @@
-export const ABILITIES = {
+import type { AbilitiesMap } from "../types";
+
+export const ABILITIES: AbilitiesMap = {
   healWave: {
     id: "healWave",
     name: "Heal Wave",

@@ -1,9 +1,25 @@
-import { UNIT_TYPES } from "../data/units.js";
-import { SHOP_CONFIG } from "../data/shop.js";
-import { SIDE } from "../config/GameConfig.js";
+import { UNIT_TYPES } from "../data/units";
+import { SHOP_CONFIG } from "../data/shop";
+import { SIDE } from "../config/GameConfig";
+import type { Side, UnitTypeConfig } from "../types";
+import type EconomySystem from "./EconomySystem";
+
+interface ShopState {
+  offers: (string | null)[];
+  rerolls: number;
+}
+
+interface ShopScene {
+  isGameOver: boolean;
+  waveLocked: boolean;
+  events: { emit: (event: string, ...args: unknown[]) => void };
+}
 
 export default class ShopManager {
-  constructor(scene) {
+  scene: ShopScene;
+  shops: Record<Side, ShopState>;
+
+  constructor(scene: ShopScene) {
     this.scene = scene;
     this.shops = {
       [SIDE.PLAYER]: { offers: [], rerolls: 0 },
@@ -11,31 +27,29 @@ export default class ShopManager {
     };
   }
 
-  get player() {
+  get player(): ShopState {
     return this.shops[SIDE.PLAYER];
   }
 
-  get ai() {
+  get ai(): ShopState {
     return this.shops[SIDE.AI];
   }
 
-  getShop(side) {
+  getShop(side: Side): ShopState {
     return this.shops[side];
   }
 
-  getTierCap(stageIndex) {
+  getTierCap(stageIndex: number): number {
     const caps = SHOP_CONFIG.stageTierCaps;
     return caps[Math.min(stageIndex, caps.length - 1)];
   }
 
-  getEligibleUnits(stageIndex) {
+  getEligibleUnits(stageIndex: number): UnitTypeConfig[] {
     const tierCap = this.getTierCap(stageIndex);
-    return Object.values(UNIT_TYPES).filter(
-      (unit) => unit.stageMin <= stageIndex && unit.tier <= tierCap
-    );
+    return Object.values(UNIT_TYPES).filter((unit) => unit.stageMin <= stageIndex && unit.tier <= tierCap);
   }
 
-  pickWeighted(units) {
+  pickWeighted(units: UnitTypeConfig[]): UnitTypeConfig {
     const total = units.reduce((sum, unit) => sum + (unit.shopWeight || 1), 0);
     let roll = Math.random() * total;
     for (const unit of units) {
@@ -45,7 +59,7 @@ export default class ShopManager {
     return units[units.length - 1];
   }
 
-  rollOffers(side, stageIndex, resetRerolls = false) {
+  rollOffers(side: Side, stageIndex: number, resetRerolls = false): void {
     const shop = this.shops[side];
     if (!shop) return;
     if (resetRerolls) shop.rerolls = 0;
@@ -56,7 +70,7 @@ export default class ShopManager {
       return;
     }
 
-    const offers = [];
+    const offers: string[] = [];
     let pool = [...eligible];
     const guarantees = stageIndex === 0 ? SHOP_CONFIG.earlyRoleGuarantees : [];
 
@@ -82,13 +96,13 @@ export default class ShopManager {
     shop.offers = offers;
   }
 
-  getRerollCost(side) {
+  getRerollCost(side: Side): number {
     const shop = this.shops[side];
     if (!shop) return SHOP_CONFIG.baseRerollCost;
     return SHOP_CONFIG.baseRerollCost + shop.rerolls * SHOP_CONFIG.rerollCostGrowth;
   }
 
-  requestReroll(side, economy, stageIndex) {
+  requestReroll(side: Side, economy: EconomySystem, stageIndex: number): boolean {
     if (this.scene.isGameOver) return false;
     if (this.scene.waveLocked) return false;
     const cost = this.getRerollCost(side);
@@ -99,13 +113,13 @@ export default class ShopManager {
     return true;
   }
 
-  isUnitAvailable(side, type) {
+  isUnitAvailable(side: Side, type: string): boolean {
     const shop = this.shops[side];
     if (!shop) return false;
     return shop.offers.includes(type);
   }
 
-  claimOffer(side, type) {
+  claimOffer(side: Side, type: string): boolean {
     const shop = this.shops[side];
     if (!shop) return false;
     const index = shop.offers.indexOf(type);
@@ -114,7 +128,7 @@ export default class ShopManager {
     return true;
   }
 
-  isSoldOut(side) {
+  isSoldOut(side: Side): boolean {
     const shop = this.shops[side];
     if (!shop || !Array.isArray(shop.offers) || shop.offers.length === 0) return false;
     return shop.offers.every((offer) => !offer);

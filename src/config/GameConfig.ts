@@ -3,12 +3,27 @@
  * All balance values, tuning constants, and magic numbers live here.
  */
 
-export const SIDE = {
+import type {
+  SideConstants,
+  CastleVariant,
+  CastleMetrics,
+  CastleConfig,
+  TurretConfig,
+  EconomyConfig,
+  WaveConfig,
+  ControlPointConfig,
+  AIConfig,
+  UnitSize,
+  CombatConfig,
+  LayoutProfile
+} from "../types";
+
+export const SIDE: SideConstants = {
   PLAYER: "player",
   AI: "ai"
 };
 
-export const CASTLE_VARIANTS = [
+export const CASTLE_VARIANTS: readonly CastleVariant[] = [
   {
     id: "v1",
     label: "Twin V1",
@@ -29,7 +44,7 @@ export const CASTLE_VARIANTS = [
   }
 ];
 
-export const CASTLE_METRICS = {
+export const CASTLE_METRICS: CastleMetrics = {
   baseWidth: 132,
   baseHeight: 176,
   baseCenterYOffset: 28,
@@ -45,7 +60,7 @@ export const CASTLE_METRICS = {
   hpHeight: 20
 };
 
-export const CASTLE_CONFIG = {
+export const CASTLE_CONFIG: CastleConfig = {
   maxHp: 900,
   hitFlashDuration: 120,
   hitFlashColor: 0xffe0a3,
@@ -54,7 +69,7 @@ export const CASTLE_CONFIG = {
   hitLogCooldown: 1600
 };
 
-export const TURRET_CONFIG = {
+export const TURRET_CONFIG: TurretConfig = {
   maxHp: 520,
   range: 190,
   damage: 22,
@@ -67,7 +82,7 @@ export const TURRET_CONFIG = {
   flashDuration: 100
 };
 
-export const ECONOMY_CONFIG = {
+export const ECONOMY_CONFIG: EconomyConfig = {
   startingResources: 20,
   baseIncome: 1.1,
   zoneBonus: 1.2,
@@ -79,7 +94,7 @@ export const ECONOMY_CONFIG = {
   interestTick: 1
 };
 
-export const WAVE_CONFIG = {
+export const WAVE_CONFIG: WaveConfig = {
   lockSeconds: 5,
   supply: 12,
   slots: { front: 4, mid: 4, rear: 4 },
@@ -95,7 +110,7 @@ export const WAVE_CONFIG = {
   roleDiminishingFloor: 0.6
 };
 
-export const CONTROL_POINT_CONFIG = {
+export const CONTROL_POINT_CONFIG: ControlPointConfig = {
   count: 5,
   progressRate: 0.12,
   ownershipThreshold: 0.4,
@@ -106,19 +121,19 @@ export const CONTROL_POINT_CONFIG = {
   zoneShakeDuration: 120
 };
 
-export const AI_CONFIG = {
+export const AI_CONFIG: AIConfig = {
   decisionInterval: 1400,
   defensiveHpThreshold: 0.85,
   rerollSafetyBuffer: 2
 };
 
-export const UNIT_SIZE = {
+export const UNIT_SIZE: UnitSize = {
   frontline: 40,
   damage: 32,
   default: 34
 };
 
-export const COMBAT_CONFIG = {
+export const COMBAT_CONFIG: CombatConfig = {
   castleAttackRange: 50,
   flashDuration: 100,
   spawnSpread: 10,
@@ -128,11 +143,11 @@ export const COMBAT_CONFIG = {
   calloutDuration: 900
 };
 
-export const PHASE_LABELS = ["Early", "Mid", "Late", "Final"];
+export const PHASE_LABELS: readonly string[] = ["Early", "Mid", "Late", "Final"];
 
 export const LAYOUT_STORAGE_KEY = "layoutProfileV4";
 
-export function createDefaultLayoutProfile() {
+export function createDefaultLayoutProfile(): LayoutProfile {
   return {
     mirrorMode: true,
     castle: {

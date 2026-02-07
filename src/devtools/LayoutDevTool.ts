@@ -1,8 +1,37 @@
 import Phaser from "phaser";
-import { createDefaultLayoutProfile } from "../config/GameConfig.js";
+import { createDefaultLayoutProfile } from "../config/GameConfig";
+import type GameScene from "../scenes/GameScene";
+
+interface Handle {
+  id: string;
+  label: string;
+  dot: Phaser.GameObjects.Arc;
+  txt: Phaser.GameObjects.Text;
+  get: () => { x: number; y: number };
+  set: (x: number, y: number) => void;
+  onWheel?: (dy: number) => void;
+}
 
 export default class LayoutDevTool {
-  constructor(scene) {
+  scene: GameScene;
+  enabled: boolean;
+  selectedId: string | null;
+  handles: Handle[];
+  pointerDown: boolean;
+  dirty: boolean;
+  toggleKey: Phaser.Input.Keyboard.Key | null;
+  keys:
+    | {
+        shift: Phaser.Input.Keyboard.Key;
+        left: Phaser.Input.Keyboard.Key;
+        right: Phaser.Input.Keyboard.Key;
+        up: Phaser.Input.Keyboard.Key;
+        down: Phaser.Input.Keyboard.Key;
+      }
+    | Record<string, never>;
+  panel: HTMLElement | null;
+
+  constructor(scene: GameScene) {
     this.scene = scene;
     this.enabled = false;
     this.selectedId = null;
@@ -14,7 +43,7 @@ export default class LayoutDevTool {
     this.panel = null;
   }
 
-  setup() {
+  setup(): void {
     if (!this.scene.input?.keyboard) return;
 
     this.toggleKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.K);
@@ -26,7 +55,7 @@ export default class LayoutDevTool {
       down: this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN)
     };
 
-    this.scene.input.on("wheel", (_pointer, _objects, _dx, dy) => {
+    this.scene.input.on("wheel", (_pointer: unknown, _objects: unknown, _dx: number, dy: number) => {
       if (!this.enabled) return;
       const selected = this.handles.find((h) => h.id === this.selectedId);
       if (!selected || !selected.onWheel) return;
@@ -37,31 +66,38 @@ export default class LayoutDevTool {
     this.createPanel();
   }
 
-  handleInput() {
+  handleInput(): void {
     if (this.toggleKey && Phaser.Input.Keyboard.JustDown(this.toggleKey)) {
       this.toggle();
     }
     if (!this.enabled || !this.scene.input?.keyboard) return;
 
-    const nudge = this.keys.shift.isDown ? 5 : 1;
+    const keys = this.keys as {
+      shift: Phaser.Input.Keyboard.Key;
+      left: Phaser.Input.Keyboard.Key;
+      right: Phaser.Input.Keyboard.Key;
+      up: Phaser.Input.Keyboard.Key;
+      down: Phaser.Input.Keyboard.Key;
+    };
+    const nudge = keys.shift.isDown ? 5 : 1;
     const selected = this.handles.find((h) => h.id === this.selectedId);
     if (!selected || !selected.set) return;
 
     const pos = selected.get();
     let changed = false;
-    if (this.scene.input.keyboard.checkDown(this.keys.left, 30)) {
+    if (this.scene.input.keyboard.checkDown(keys.left, 30)) {
       pos.x -= nudge;
       changed = true;
     }
-    if (this.scene.input.keyboard.checkDown(this.keys.right, 30)) {
+    if (this.scene.input.keyboard.checkDown(keys.right, 30)) {
       pos.x += nudge;
       changed = true;
     }
-    if (this.scene.input.keyboard.checkDown(this.keys.up, 30)) {
+    if (this.scene.input.keyboard.checkDown(keys.up, 30)) {
       pos.y -= nudge;
       changed = true;
     }
-    if (this.scene.input.keyboard.checkDown(this.keys.down, 30)) {
+    if (this.scene.input.keyboard.checkDown(keys.down, 30)) {
       pos.y += nudge;
       changed = true;
     }
@@ -71,7 +107,7 @@ export default class LayoutDevTool {
     }
   }
 
-  toggle() {
+  toggle(): void {
     this.enabled = !this.enabled;
     if (this.enabled) {
       this.scene.clearCombatUnits();
@@ -84,7 +120,7 @@ export default class LayoutDevTool {
     this.syncPanel();
   }
 
-  createPanel() {
+  createPanel(): void {
     if (typeof document === "undefined") return;
     const panel = document.createElement("div");
     panel.id = "layout-dev-panel";
@@ -129,10 +165,10 @@ export default class LayoutDevTool {
     const copyBtn = panel.querySelector("[data-layout-copy]");
     const saveBtn = panel.querySelector("[data-layout-save]");
     const resetBtn = panel.querySelector("[data-layout-reset]");
-    const mirrorBox = panel.querySelector("[data-layout-mirror]");
-    const pillarsBox = panel.querySelector("[data-layout-pillars]");
-    const ropesBox = panel.querySelector("[data-layout-ropes]");
-    const controlFxBox = panel.querySelector("[data-layout-controlfx]");
+    const mirrorBox = panel.querySelector("[data-layout-mirror]") as HTMLInputElement;
+    const pillarsBox = panel.querySelector("[data-layout-pillars]") as HTMLInputElement;
+    const ropesBox = panel.querySelector("[data-layout-ropes]") as HTMLInputElement;
+    const controlFxBox = panel.querySelector("[data-layout-controlfx]") as HTMLInputElement;
 
     copyBtn?.addEventListener("click", () => this.scene.exportLayoutProfile());
     saveBtn?.addEventListener("click", () => this.scene.saveLayoutProfile());
@@ -145,33 +181,33 @@ export default class LayoutDevTool {
       this.syncPanel();
     });
     mirrorBox?.addEventListener("change", (event) => {
-      this.scene.layoutProfile.mirrorMode = Boolean(event.target?.checked);
+      this.scene.layoutProfile.mirrorMode = Boolean((event.target as HTMLInputElement)?.checked);
       this.commit();
     });
     pillarsBox?.addEventListener("change", (event) => {
-      this.scene.layoutProfile.bridge.showPillars = Boolean(event.target?.checked);
+      this.scene.layoutProfile.bridge.showPillars = Boolean((event.target as HTMLInputElement)?.checked);
       this.commit();
     });
     ropesBox?.addEventListener("change", (event) => {
-      this.scene.layoutProfile.bridge.showRopes = Boolean(event.target?.checked);
+      this.scene.layoutProfile.bridge.showRopes = Boolean((event.target as HTMLInputElement)?.checked);
       this.commit();
     });
     controlFxBox?.addEventListener("change", (event) => {
-      this.scene.layoutProfile.bridge.showControlFx = Boolean(event.target?.checked);
+      this.scene.layoutProfile.bridge.showControlFx = Boolean((event.target as HTMLInputElement)?.checked);
       this.commit();
     });
 
     this.panel = panel;
   }
 
-  syncPanel() {
+  syncPanel(): void {
     if (!this.panel) return;
     this.panel.style.display = this.enabled ? "block" : "none";
     const info = this.panel.querySelector("[data-layout-info]");
-    const mirror = this.panel.querySelector("[data-layout-mirror]");
-    const pillars = this.panel.querySelector("[data-layout-pillars]");
-    const ropes = this.panel.querySelector("[data-layout-ropes]");
-    const controlFx = this.panel.querySelector("[data-layout-controlfx]");
+    const mirror = this.panel.querySelector("[data-layout-mirror]") as HTMLInputElement;
+    const pillars = this.panel.querySelector("[data-layout-pillars]") as HTMLInputElement;
+    const ropes = this.panel.querySelector("[data-layout-ropes]") as HTMLInputElement;
+    const controlFx = this.panel.querySelector("[data-layout-controlfx]") as HTMLInputElement;
     if (mirror) mirror.checked = Boolean(this.scene.layoutProfile?.mirrorMode);
     if (pillars) pillars.checked = Boolean(this.scene.layoutProfile?.bridge?.showPillars);
     if (ropes) ropes.checked = Boolean(this.scene.layoutProfile?.bridge?.showRopes);
@@ -190,19 +226,28 @@ export default class LayoutDevTool {
     info.textContent = `${selected.label}  x:${Math.round(pos.x)} y:${Math.round(pos.y)}`;
   }
 
-  setupHandles() {
+  setupHandles(): void {
     this.destroyHandles();
     const scene = this.scene;
     const profile = scene.layoutProfile;
 
-    const makeHandle = (id, label, color, get, set, onWheel) => {
+    const makeHandle = (
+      id: string,
+      label: string,
+      color: number,
+      get: () => { x: number; y: number },
+      set: (x: number, y: number) => void,
+      onWheel?: (dy: number) => void
+    ) => {
       const p = get();
       const dot = scene.add.circle(p.x, p.y, 9, color, 0.95).setDepth(100).setStrokeStyle(2, 0x10131b, 1);
-      const txt = scene.add.text(p.x + 12, p.y - 8, label, {
-        fontFamily: "monospace",
-        fontSize: "11px",
-        color: "#f0f4ff"
-      }).setDepth(101);
+      const txt = scene.add
+        .text(p.x + 12, p.y - 8, label, {
+          fontFamily: "monospace",
+          fontSize: "11px",
+          color: "#f0f4ff"
+        })
+        .setDepth(101);
       dot.setInteractive({ draggable: true, useHandCursor: true });
       scene.input.setDraggable(dot);
       const handle = { id, label, dot, txt, get, set, onWheel };
@@ -211,16 +256,22 @@ export default class LayoutDevTool {
         this.refreshHandles();
         this.syncPanel();
       });
-      dot.on("drag", (_pointer, dragX, dragY) => {
+      dot.on("drag", (_pointer: unknown, dragX: number, dragY: number) => {
         set(dragX, dragY);
         this.commit();
       });
       this.handles.push(handle);
     };
 
-    makeHandle("castle-player", "Castle", 0x7bb1d8,
+    makeHandle(
+      "castle-player",
+      "Castle",
+      0x7bb1d8,
       () => ({ x: profile.castle.playerX, y: profile.castle.anchorY }),
-      (x, y) => { profile.castle.playerX = x; profile.castle.anchorY = y; },
+      (x, y) => {
+        profile.castle.playerX = x;
+        profile.castle.anchorY = y;
+      },
       (dy) => {
         const mult = dy > 0 ? 0.98 : 1.02;
         profile.castle.baseWidth = Phaser.Math.Clamp(profile.castle.baseWidth * mult, 80, 260);
@@ -230,7 +281,10 @@ export default class LayoutDevTool {
       }
     );
 
-    makeHandle("castle-hp", "HP Bar", 0x95d79a,
+    makeHandle(
+      "castle-hp",
+      "HP Bar",
+      0x95d79a,
       () => ({
         x: scene.castleXLeft + profile.castle.hpOffsetX,
         y: profile.castle.anchorY + profile.castle.hpOffsetY
@@ -246,15 +300,28 @@ export default class LayoutDevTool {
       }
     );
 
-    makeHandle("foundation-left-start", "Found L", 0x9aa7ba,
+    makeHandle(
+      "foundation-left-start",
+      "Found L",
+      0x9aa7ba,
       () => ({ x: profile.decks.foundation.leftStart, y: profile.decks.foundation.topY }),
-      (x, y) => { profile.decks.foundation.leftStart = x; profile.decks.foundation.topY = y; },
+      (x, y) => {
+        profile.decks.foundation.leftStart = x;
+        profile.decks.foundation.topY = y;
+      },
       (dy) => {
-        profile.decks.foundation.height = Phaser.Math.Clamp(profile.decks.foundation.height + (dy > 0 ? -2 : 2), 30, 160);
+        profile.decks.foundation.height = Phaser.Math.Clamp(
+          profile.decks.foundation.height + (dy > 0 ? -2 : 2),
+          30,
+          160
+        );
       }
     );
 
-    makeHandle("foundation-left-end", "Found R", 0x9aa7ba,
+    makeHandle(
+      "foundation-left-end",
+      "Found R",
+      0x9aa7ba,
       () => ({ x: profile.decks.foundation.leftEnd, y: profile.decks.foundation.topY }),
       (x, y) => {
         profile.decks.foundation.leftEnd = Math.max(x, profile.decks.foundation.leftStart + 20);
@@ -262,15 +329,24 @@ export default class LayoutDevTool {
       }
     );
 
-    makeHandle("spawn-left-start", "Spawn L", 0xd9bf8b,
+    makeHandle(
+      "spawn-left-start",
+      "Spawn L",
+      0xd9bf8b,
       () => ({ x: profile.decks.spawn.leftStart, y: profile.decks.spawn.topY }),
-      (x, y) => { profile.decks.spawn.leftStart = x; profile.decks.spawn.topY = y; },
+      (x, y) => {
+        profile.decks.spawn.leftStart = x;
+        profile.decks.spawn.topY = y;
+      },
       (dy) => {
         profile.decks.spawn.height = Phaser.Math.Clamp(profile.decks.spawn.height + (dy > 0 ? -2 : 2), 24, 140);
       }
     );
 
-    makeHandle("spawn-left-end", "Spawn R", 0xd9bf8b,
+    makeHandle(
+      "spawn-left-end",
+      "Spawn R",
+      0xd9bf8b,
       () => ({ x: profile.decks.spawn.leftEnd, y: profile.decks.spawn.topY }),
       (x, y) => {
         profile.decks.spawn.leftEnd = Math.max(x, profile.decks.spawn.leftStart + 20);
@@ -278,25 +354,44 @@ export default class LayoutDevTool {
       }
     );
 
-    makeHandle("bridge-left", "Bridge L", 0xb6c6a2,
+    makeHandle(
+      "bridge-left",
+      "Bridge L",
+      0xb6c6a2,
       () => ({ x: profile.decks.spawn.leftEnd, y: profile.bridge.topY }),
-      (x, y) => { profile.decks.spawn.leftEnd = x; profile.bridge.topY = y; },
+      (x, y) => {
+        profile.decks.spawn.leftEnd = x;
+        profile.bridge.topY = y;
+      },
       (dy) => {
         profile.bridge.thickness = Phaser.Math.Clamp(profile.bridge.thickness + (dy > 0 ? -2 : 2), 18, 100);
       }
     );
 
-    makeHandle("bridge-thickness", "Bridge H", 0x9ed592,
-      () => ({ x: scene.width / 2, y: profile.bridge.topY + profile.bridge.plankOffsetY + profile.bridge.thickness / 2 }),
+    makeHandle(
+      "bridge-thickness",
+      "Bridge H",
+      0x9ed592,
+      () => ({
+        x: scene.width / 2,
+        y: profile.bridge.topY + profile.bridge.plankOffsetY + profile.bridge.thickness / 2
+      }),
       (_x, y) => {
-        profile.bridge.thickness = Phaser.Math.Clamp((y - (profile.bridge.topY + profile.bridge.plankOffsetY)) * 2, 14, 120);
+        profile.bridge.thickness = Phaser.Math.Clamp(
+          (y - (profile.bridge.topY + profile.bridge.plankOffsetY)) * 2,
+          14,
+          120
+        );
       },
       (dy) => {
         profile.bridge.thickness = Phaser.Math.Clamp(profile.bridge.thickness + (dy > 0 ? -2 : 2), 14, 120);
       }
     );
 
-    makeHandle("turret-player", "Turret", 0x84c5c0,
+    makeHandle(
+      "turret-player",
+      "Turret",
+      0x84c5c0,
       () => ({ x: scene.platformLeftEnd - profile.turret.sideInset, y: scene.spawnDeckY + profile.turret.yOffset }),
       (x, y) => {
         profile.turret.sideInset = scene.platformLeftEnd - x;
@@ -311,7 +406,10 @@ export default class LayoutDevTool {
       }
     );
 
-    makeHandle("turret-hp", "Turret HP", 0x8fd6ff,
+    makeHandle(
+      "turret-hp",
+      "Turret HP",
+      0x8fd6ff,
       () => ({
         x: scene.platformLeftEnd - profile.turret.sideInset + profile.turret.hpOffsetX,
         y: scene.spawnDeckY + profile.turret.yOffset + profile.turret.hpOffsetY
@@ -329,17 +427,27 @@ export default class LayoutDevTool {
       }
     );
 
-    makeHandle("unit-spawn-player", "Unit Spawn", 0xe2a58a,
+    makeHandle(
+      "unit-spawn-player",
+      "Unit Spawn",
+      0xe2a58a,
       () => ({ x: scene.platformLeftStart + profile.units.spawnInset, y: profile.units.laneY }),
       (x, y) => {
         profile.units.spawnInset = x - scene.platformLeftStart;
         profile.units.laneY = y;
-      }
+      },
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      () => {}
     );
 
-    makeHandle("control-line", "Control", 0xc99ce4,
+    makeHandle(
+      "control-line",
+      "Control",
+      0xc99ce4,
       () => ({ x: scene.width / 2, y: profile.control.y }),
-      (_x, y) => { profile.control.y = y; },
+      (_x, y) => {
+        profile.control.y = y;
+      },
       (dy) => {
         profile.control.zoneWidth = Phaser.Math.Clamp(profile.control.zoneWidth + (dy > 0 ? -4 : 4), 40, 220);
       }
@@ -348,7 +456,7 @@ export default class LayoutDevTool {
     this.refreshHandles();
   }
 
-  refreshHandles() {
+  refreshHandles(): void {
     for (const handle of this.handles) {
       const p = handle.get();
       handle.dot.setPosition(p.x, p.y);
@@ -358,7 +466,7 @@ export default class LayoutDevTool {
     }
   }
 
-  destroyHandles() {
+  destroyHandles(): void {
     for (const handle of this.handles) {
       handle.dot.destroy();
       handle.txt.destroy();
@@ -367,7 +475,7 @@ export default class LayoutDevTool {
     this.selectedId = null;
   }
 
-  commit() {
+  commit(): void {
     this.scene.computeBoardLayout();
     this.scene.rebuildLayoutVisuals();
     this.refreshHandles();
@@ -375,7 +483,7 @@ export default class LayoutDevTool {
     this.syncPanel();
   }
 
-  destroy() {
+  destroy(): void {
     this.destroyHandles();
     if (this.panel?.parentElement) {
       this.panel.parentElement.removeChild(this.panel);

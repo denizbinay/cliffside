@@ -1,6 +1,6 @@
 import Phaser from "phaser";
-import { UNIT_TYPES } from "../data/units.js";
-import { ABILITIES } from "../data/abilities.js";
+import { UNIT_TYPES } from "../data/units";
+import { ABILITIES } from "../data/abilities";
 import {
   SIDE,
   CASTLE_VARIANTS,
@@ -10,25 +10,149 @@ import {
   COMBAT_CONFIG,
   LAYOUT_STORAGE_KEY,
   createDefaultLayoutProfile
-} from "../config/GameConfig.js";
+} from "../config/GameConfig";
 
-import Unit from "../entities/Unit.js";
-import Turret from "../entities/Turret.js";
-import Castle from "../entities/Castle.js";
-import EconomySystem from "../systems/EconomySystem.js";
-import ShopManager from "../systems/ShopManager.js";
-import WaveManager from "../systems/WaveManager.js";
-import AIController from "../systems/AIController.js";
-import CombatSystem from "../systems/CombatSystem.js";
-import LayoutDevTool from "../devtools/LayoutDevTool.js";
-import UnitDevTool from "../devtools/UnitDevTool.js";
+import Unit from "../entities/Unit";
+import Turret from "../entities/Turret";
+import Castle from "../entities/Castle";
+import EconomySystem from "../systems/EconomySystem";
+import ShopManager from "../systems/ShopManager";
+import WaveManager from "../systems/WaveManager";
+import AIController from "../systems/AIController";
+import CombatSystem from "../systems/CombatSystem";
+import LayoutDevTool from "../devtools/LayoutDevTool";
+import UnitDevTool from "../devtools/UnitDevTool";
+
+import type {
+  Side,
+  LayoutProfile,
+  ControlPoint,
+  WaveDraft,
+  WaveSlots,
+  AbilityId,
+  CastleVariant,
+  IncomeDetails,
+  UiState
+} from "../types";
+
+interface GhostGhost {
+  container: Phaser.GameObjects.Container;
+  currentType: string | null;
+}
+
+interface GhostRow {
+  front: GhostGhost[];
+  mid: GhostGhost[];
+  rear: GhostGhost[];
+  [key: string]: GhostGhost[];
+}
+
+interface LayoutBoard {
+  leftFoundationStart: number;
+  leftFoundationEnd: number;
+  rightFoundationStart: number;
+  rightFoundationEnd: number;
+  leftSpawnStart: number;
+  leftSpawnEnd: number;
+  rightSpawnStart: number;
+  rightSpawnEnd: number;
+  bridgeLeft: number;
+  bridgeRight: number;
+}
 
 export default class GameScene extends Phaser.Scene {
+  castleVariants!: readonly CastleVariant[];
+  castleVariantIndex!: number;
+  width!: number;
+  height!: number;
+  uiLeft!: number;
+  uiTop!: number;
+  uiBottom!: number;
+  playArea!: { x: number; y: number; width: number; height: number };
+
+  layoutProfile!: LayoutProfile;
+  bridgeVisuals!: (
+    | Phaser.GameObjects.Image
+    | Phaser.GameObjects.Rectangle
+    | Phaser.GameObjects.TileSprite
+    | Phaser.GameObjects.Graphics
+    | Phaser.GameObjects.Arc
+  )[];
+
+  playerUnits!: Unit[];
+  aiUnits!: Unit[];
+  playerTurret!: Turret | null;
+  aiTurret!: Turret | null;
+  playerTurrets!: (Turret | null)[];
+  aiTurrets!: (Turret | null)[];
+
+  economy!: EconomySystem;
+  shopManager!: ShopManager;
+  waveManager!: WaveManager;
+  aiController!: AIController;
+  combatSystem!: CombatSystem;
+
+  layoutDevTool!: LayoutDevTool;
+  unitDevTool!: UnitDevTool;
+
+  isGameOver!: boolean;
+  lastCastleHitLog!: { player: number; ai: number };
+  matchTime!: number;
+  zoneOwner!: Side | "neutral";
+  zoneCheckTimer!: number;
+  abilityCooldowns!: Record<AbilityId, number>;
+  ghostAlpha!: number;
+  ghostFormation!: { rows: GhostRow };
+
+  playerCastle!: Castle;
+  aiCastle!: Castle;
+  _controlPoints!: ControlPoint[];
+
+  // Layout computed properties
+  castleXLeft!: number;
+  castleXRight!: number;
+  castleAnchorY!: number;
+  castleBaseWidth!: number;
+  castleBaseHeight!: number;
+  castleBaseCenterYOffset!: number;
+  castleFootY!: number;
+  foundationDeckY!: number;
+  foundationDeckHeight!: number;
+  spawnDeckY!: number;
+  spawnDeckHeight!: number;
+  bridgeY!: number;
+  bridgePlankY!: number;
+  bridgeThickness!: number;
+  bridgeShowPillars!: boolean;
+  bridgeShowRopes!: boolean;
+  bridgeShowControlFx!: boolean;
+  bridgeRopeTopY!: number;
+  bridgeRopeBottomY!: number;
+  bridgePillarY!: number;
+  bridgePillarHeight!: number;
+  bridgePillarStep!: number;
+  turretSideInset!: number;
+  turretY!: number;
+  unitSpawnInset!: number;
+  unitLaneY!: number;
+  unitCalloutOffsetY!: number;
+  controlY!: number;
+  controlZoneWidth!: number;
+  controlZoneHeight!: number;
+  boardLayout!: LayoutBoard;
+
+  platformLeftStart!: number;
+  platformLeftEnd!: number;
+  platformRightStart!: number;
+  platformRightEnd!: number;
+  bridgeLeft!: number;
+  bridgeRight!: number;
+
   constructor() {
     super("Game");
   }
 
-  create() {
+  create(): void {
     this.castleVariants = CASTLE_VARIANTS;
     this.castleVariantIndex = this.resolveInitialCastleVariantIndex();
 
@@ -100,41 +224,75 @@ export default class GameScene extends Phaser.Scene {
 
     this.aiController.setup();
 
-    this.events.on("spawn-request", (type) => this.requestSpawn(type));
-    this.events.on("queue-add", (payload) => {
+    this.events.on("spawn-request", (type: string) => this.requestSpawn(type));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    this.events.on("queue-add", (payload: any) => {
       const stageIdx = this.waveManager.getStageIndex(this.matchTime);
       this.waveManager.queueUnit(payload, SIDE.PLAYER, this.economy, this.shopManager, stageIdx);
     });
-    this.events.on("queue-remove", (payload) => this.waveManager.removeQueuedUnit(payload, SIDE.PLAYER));
-    this.events.on("queue-move", (payload) => this.waveManager.moveQueuedUnit(payload, SIDE.PLAYER));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    this.events.on("queue-remove", (payload: any) => this.waveManager.removeQueuedUnit(payload, SIDE.PLAYER));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    this.events.on("queue-move", (payload: any) => this.waveManager.moveQueuedUnit(payload, SIDE.PLAYER));
     this.events.on("shop-reroll", () => {
       const stageIdx = this.waveManager.getStageIndex(this.matchTime);
       this.shopManager.requestReroll(SIDE.PLAYER, this.economy, stageIdx);
     });
-    this.events.on("stance-select", (payload) => this.waveManager.selectStance(payload, SIDE.PLAYER));
-    this.events.on("ability-request", (id) => this.requestAbility(id));
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    this.events.on("stance-select", (payload: any) => this.waveManager.selectStance(payload, SIDE.PLAYER));
+    this.events.on("ability-request", (id: AbilityId) => this.requestAbility(id));
 
     this.emitUiState();
   }
 
   // Proxy properties for backward compatibility with systems/UI
-  get playerResources() { return this.economy.playerResources; }
-  set playerResources(v) { this.economy.playerResources = v; }
-  get aiResources() { return this.economy.aiResources; }
-  set aiResources(v) { this.economy.aiResources = v; }
-  get waveNumber() { return this.waveManager.waveNumber; }
-  set waveNumber(v) { this.waveManager.waveNumber = v; }
-  get waveCountdown() { return this.waveManager.waveCountdown; }
-  set waveCountdown(v) { this.waveManager.waveCountdown = v; }
-  get waveLocked() { return this.waveManager.waveLocked; }
-  set waveLocked(v) { this.waveManager.waveLocked = v; }
-  get waveSupply() { return this.waveManager.waveSupply; }
-  get waveSlots() { return this.waveManager.waveSlots; }
-  get playerDraft() { return this.waveManager.playerDraft; }
-  get controlPoints() { return this._controlPoints || []; }
-  set controlPoints(v) { this._controlPoints = v; }
+  get playerResources(): number {
+    return this.economy.playerResources;
+  }
+  set playerResources(v: number) {
+    this.economy.playerResources = v;
+  }
+  get aiResources(): number {
+    return this.economy.aiResources;
+  }
+  set aiResources(v: number) {
+    this.economy.aiResources = v;
+  }
+  get waveNumber(): number {
+    return this.waveManager.waveNumber;
+  }
+  set waveNumber(v: number) {
+    this.waveManager.waveNumber = v;
+  }
+  get waveCountdown(): number {
+    return this.waveManager.waveCountdown;
+  }
+  set waveCountdown(v: number) {
+    this.waveManager.waveCountdown = v;
+  }
+  get waveLocked(): boolean {
+    return this.waveManager.waveLocked;
+  }
+  set waveLocked(v: boolean) {
+    this.waveManager.waveLocked = v;
+  }
+  get waveSupply(): number {
+    return this.waveManager.waveSupply;
+  }
+  get waveSlots(): WaveSlots {
+    return this.waveManager.waveSlots;
+  }
+  get playerDraft(): WaveDraft {
+    return this.waveManager.playerDraft;
+  }
+  get controlPoints(): ControlPoint[] {
+    return this._controlPoints || [];
+  }
+  set controlPoints(v: ControlPoint[]) {
+    this._controlPoints = v;
+  }
 
-  resolveInitialCastleVariantIndex() {
+  resolveInitialCastleVariantIndex(): number {
     const max = CASTLE_VARIANTS.length;
     if (typeof window !== "undefined") {
       try {
@@ -159,7 +317,7 @@ export default class GameScene extends Phaser.Scene {
     return 0;
   }
 
-  getCastleVariant() {
+  getCastleVariant(): { label: string; baseKey: string; towerKey: string; useTwinMirror: boolean } {
     const variant = this.castleVariants[this.castleVariantIndex] || this.castleVariants[0];
     const hasVariantBase = variant && this.textures.exists(variant.baseKey);
     const hasVariantTower = variant && this.textures.exists(variant.towerKey);
@@ -171,7 +329,7 @@ export default class GameScene extends Phaser.Scene {
     };
   }
 
-  update(_, deltaMs) {
+  update(_: number, deltaMs: number): void {
     const delta = deltaMs / 1000;
 
     this.layoutDevTool.handleInput();
@@ -221,7 +379,7 @@ export default class GameScene extends Phaser.Scene {
 
   // --- Background & Bridge ---
 
-  createBackground() {
+  createBackground(): void {
     const hasBgSky = this.textures.exists("bg_sky");
 
     this.add.rectangle(this.width / 2, this.height / 2, this.width, this.height, 0x151922).setDepth(-20);
@@ -230,17 +388,19 @@ export default class GameScene extends Phaser.Scene {
       ? this.add.image(this.width / 2, this.height / 2, "bg_sky")
       : this.add.rectangle(this.width / 2, this.height / 2, this.width, this.height, 0x273145);
     if (hasBgSky) {
-      const frame = this.textures.get("bg_sky").getSourceImage();
+      const frame = this.textures.get("bg_sky").getSourceImage() as HTMLImageElement;
       const scale = Math.max((this.width + 8) / frame.width, (this.height + 8) / frame.height);
-      sky.setScale(scale);
+      (sky as Phaser.GameObjects.Image).setScale(scale);
     }
     sky.setDepth(-18);
 
-    const vignette = this.add.rectangle(this.width / 2, this.height / 2, this.width, this.height, 0x0d1016, 0.15).setDepth(4);
+    const vignette = this.add
+      .rectangle(this.width / 2, this.height / 2, this.width, this.height, 0x0d1016, 0.15)
+      .setDepth(4);
     vignette.setBlendMode(Phaser.BlendModes.MULTIPLY);
   }
 
-  createBridge() {
+  createBridge(): void {
     this.clearBridgeVisuals();
     const bridgeY = this.controlY;
     const bridgeThickness = this.bridgeThickness;
@@ -262,43 +422,100 @@ export default class GameScene extends Phaser.Scene {
     const hasBridgePillar = this.textures.exists("bridge_pillar");
     const hasBridgeRope = this.textures.exists("bridge_rope");
 
-    this.drawDeckSegment(this.boardLayout.leftFoundationStart, this.boardLayout.leftFoundationEnd, this.foundationDeckY, this.foundationDeckHeight, 1, hasPlatform);
-    this.drawDeckSegment(this.boardLayout.rightFoundationStart, this.boardLayout.rightFoundationEnd, this.foundationDeckY, this.foundationDeckHeight, 1, hasPlatform);
-    this.drawDeckSegment(this.platformLeftStart, this.platformLeftEnd, this.spawnDeckY, this.spawnDeckHeight, 2, hasPlatform);
-    this.drawDeckSegment(this.platformRightStart, this.platformRightEnd, this.spawnDeckY, this.spawnDeckHeight, 2, hasPlatform);
+    this.drawDeckSegment(
+      this.boardLayout.leftFoundationStart,
+      this.boardLayout.leftFoundationEnd,
+      this.foundationDeckY,
+      this.foundationDeckHeight,
+      1,
+      hasPlatform
+    );
+    this.drawDeckSegment(
+      this.boardLayout.rightFoundationStart,
+      this.boardLayout.rightFoundationEnd,
+      this.foundationDeckY,
+      this.foundationDeckHeight,
+      1,
+      hasPlatform
+    );
+    this.drawDeckSegment(
+      this.platformLeftStart,
+      this.platformLeftEnd,
+      this.spawnDeckY,
+      this.spawnDeckHeight,
+      2,
+      hasPlatform
+    );
+    this.drawDeckSegment(
+      this.platformRightStart,
+      this.platformRightEnd,
+      this.spawnDeckY,
+      this.spawnDeckHeight,
+      2,
+      hasPlatform
+    );
 
     if (hasBridgePlank) {
       const segmentCount = 6;
       const segmentWidth = bridgeWidth / segmentCount;
       for (let i = 0; i < segmentCount; i += 1) {
         const x = this.bridgeLeft + segmentWidth * (i + 0.5);
-        this.addBridgeVisual(this.add.image(x, bridgePlankY, "bridge_plank").setDisplaySize(segmentWidth + 2, bridgeThickness).setDepth(2));
+        this.addBridgeVisual(
+          this.add
+            .image(x, bridgePlankY, "bridge_plank")
+            .setDisplaySize(segmentWidth + 2, bridgeThickness)
+            .setDepth(2)
+        );
       }
     } else {
-      this.addBridgeVisual(this.add.rectangle(bridgeCenter, bridgePlankY, bridgeWidth, bridgeThickness - 6, 0x3c312c).setStrokeStyle(2, 0x241b18, 1).setDepth(2));
-      this.addBridgeVisual(this.add.rectangle(bridgeCenter, bridgePlankY - bridgeThickness * 0.4, bridgeWidth - 16, 6, 0x2a211e).setDepth(2));
-      this.addBridgeVisual(this.add.rectangle(bridgeCenter, bridgePlankY + bridgeThickness * 0.4, bridgeWidth - 16, 6, 0x2a211e).setDepth(2));
+      this.addBridgeVisual(
+        this.add
+          .rectangle(bridgeCenter, bridgePlankY, bridgeWidth, bridgeThickness - 6, 0x3c312c)
+          .setStrokeStyle(2, 0x241b18, 1)
+          .setDepth(2)
+      );
+      this.addBridgeVisual(
+        this.add
+          .rectangle(bridgeCenter, bridgePlankY - bridgeThickness * 0.4, bridgeWidth - 16, 6, 0x2a211e)
+          .setDepth(2)
+      );
+      this.addBridgeVisual(
+        this.add
+          .rectangle(bridgeCenter, bridgePlankY + bridgeThickness * 0.4, bridgeWidth - 16, 6, 0x2a211e)
+          .setDepth(2)
+      );
     }
 
     if (this.bridgeShowPillars) {
       for (let x = this.bridgeLeft + 20; x <= this.bridgeRight - 20; x += this.bridgePillarStep) {
         if (hasBridgePillar) {
-          this.addBridgeVisual(this.add.image(x, this.bridgePillarY, "bridge_pillar").setDisplaySize(18, this.bridgePillarHeight).setDepth(2));
+          this.addBridgeVisual(
+            this.add
+              .image(x, this.bridgePillarY, "bridge_pillar")
+              .setDisplaySize(18, this.bridgePillarHeight)
+              .setDepth(2)
+          );
         } else {
-          this.addBridgeVisual(this.add.rectangle(x, this.bridgePillarY, 10, this.bridgePillarHeight - 4, 0x2d2522).setDepth(2));
+          this.addBridgeVisual(
+            this.add.rectangle(x, this.bridgePillarY, 10, this.bridgePillarHeight - 4, 0x2d2522).setDepth(2)
+          );
         }
       }
     }
 
     if (this.bridgeShowRopes) {
       if (hasBridgeRope) {
-        this.addBridgeVisual(this.add.tileSprite(bridgeCenter, ropeTopY, bridgeWidth, 12, "bridge_rope").setDepth(3).setAlpha(0.9));
-        this.addBridgeVisual(this.add.tileSprite(bridgeCenter, ropeBottomY, bridgeWidth, 12, "bridge_rope").setDepth(3).setAlpha(0.9));
+        this.addBridgeVisual(
+          this.add.tileSprite(bridgeCenter, ropeTopY, bridgeWidth, 12, "bridge_rope").setDepth(3).setAlpha(0.9)
+        );
+        this.addBridgeVisual(
+          this.add.tileSprite(bridgeCenter, ropeBottomY, bridgeWidth, 12, "bridge_rope").setDepth(3).setAlpha(0.9)
+        );
       } else {
         const rope = this.addBridgeVisual(this.add.graphics().setDepth(3));
-        rope.lineStyle(3, 0x1b1f27, 0.9);
-        this.drawRope(rope, this.bridgeLeft, this.bridgeRight, ropeTopY - 2, 10);
-        this.drawRope(rope, this.bridgeLeft, this.bridgeRight, ropeBottomY + 2, 10);
+        (rope as Phaser.GameObjects.Graphics).lineStyle(3, 0x1b1f27, 0.9);
+        this.drawRope(rope as Phaser.GameObjects.Graphics, this.bridgeLeft, this.bridgeRight, ropeTopY - 2, 10);
+        this.drawRope(rope as Phaser.GameObjects.Graphics, this.bridgeLeft, this.bridgeRight, ropeBottomY + 2, 10);
       }
     }
 
@@ -309,14 +526,22 @@ export default class GameScene extends Phaser.Scene {
     const spacing = bridgeWidth / (pointCount + 1);
     for (let i = 0; i < pointCount; i += 1) {
       const x = this.bridgeLeft + spacing * (i + 1);
-      const glow = this.bridgeShowControlFx && hasControlGlow
-        ? this.addBridgeVisual(this.add.image(x, bridgeY, "control_glow").setDisplaySize(36, 36).setAlpha(0.45).setDepth(3))
-        : null;
-      const rune = this.bridgeShowControlFx && hasControlRune
-        ? this.addBridgeVisual(this.add.image(x, bridgeY, "control_rune").setDisplaySize(26, 26).setAlpha(0.85).setDepth(4))
-        : null;
-      const marker = this.addBridgeVisual(this.add.circle(x, bridgeY, 10, 0x323844, 0.8).setStrokeStyle(2, 0x5b616e, 1));
-      const core = this.addBridgeVisual(this.add.circle(x, bridgeY, 5, 0x7b8598, 0.9));
+      const glow =
+        this.bridgeShowControlFx && hasControlGlow
+          ? (this.addBridgeVisual(
+              this.add.image(x, bridgeY, "control_glow").setDisplaySize(36, 36).setAlpha(0.45).setDepth(3)
+            ) as Phaser.GameObjects.Image)
+          : null;
+      const rune =
+        this.bridgeShowControlFx && hasControlRune
+          ? (this.addBridgeVisual(
+              this.add.image(x, bridgeY, "control_rune").setDisplaySize(26, 26).setAlpha(0.85).setDepth(4)
+            ) as Phaser.GameObjects.Image)
+          : null;
+      const marker = this.addBridgeVisual(
+        this.add.circle(x, bridgeY, 10, 0x323844, 0.8).setStrokeStyle(2, 0x5b616e, 1)
+      ) as Phaser.GameObjects.Arc;
+      const core = this.addBridgeVisual(this.add.circle(x, bridgeY, 5, 0x7b8598, 0.9)) as Phaser.GameObjects.Arc;
       marker.setDepth(4);
       core.setDepth(5);
       this._controlPoints.push({
@@ -339,7 +564,7 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  drawRope(graphics, x1, x2, y, sag) {
+  drawRope(graphics: Phaser.GameObjects.Graphics, x1: number, x2: number, y: number, sag: number): void {
     const steps = 18;
     graphics.beginPath();
     graphics.moveTo(x1, y);
@@ -354,26 +579,30 @@ export default class GameScene extends Phaser.Scene {
 
   // --- Castle & Turret Management ---
 
-  createCastles() {
+  createCastles(): void {
     const y = this.castleAnchorY;
-    this.playerCastle = new Castle(this, this.castleXLeft, y, SIDE.PLAYER, 0x5f7685, this.layoutProfile, () => this.getCastleVariant());
-    this.aiCastle = new Castle(this, this.castleXRight, y, SIDE.AI, 0x8a5a5a, this.layoutProfile, () => this.getCastleVariant());
+    this.playerCastle = new Castle(this, this.castleXLeft, y, SIDE.PLAYER, 0x5f7685, this.layoutProfile, () =>
+      this.getCastleVariant()
+    );
+    this.aiCastle = new Castle(this, this.castleXRight, y, SIDE.AI, 0x8a5a5a, this.layoutProfile, () =>
+      this.getCastleVariant()
+    );
 
     // Castle hit logging
     const originalPlayerTakeDamage = this.playerCastle.takeDamage.bind(this.playerCastle);
-    this.playerCastle.takeDamage = (amount) => {
+    this.playerCastle.takeDamage = (amount: number) => {
       originalPlayerTakeDamage(amount);
       this.logCastleHit(SIDE.PLAYER);
     };
 
     const originalAiTakeDamage = this.aiCastle.takeDamage.bind(this.aiCastle);
-    this.aiCastle.takeDamage = (amount) => {
+    this.aiCastle.takeDamage = (amount: number) => {
       originalAiTakeDamage(amount);
       this.logCastleHit(SIDE.AI);
     };
   }
 
-  logCastleHit(side) {
+  logCastleHit(side: Side): void {
     const key = side === SIDE.PLAYER ? "player" : "ai";
     const now = this.time.now;
     if (now - this.lastCastleHitLog[key] > CASTLE_CONFIG.hitLogCooldown) {
@@ -382,11 +611,17 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  createTurrets() {
+  createTurrets(): void {
     this.destroyTurrets();
     const offset = this.turretSideInset;
     const turretY = this.turretY;
-    this.playerTurret = new Turret(this, SIDE.PLAYER, this.platformLeftEnd - offset, turretY, this.layoutProfile.turret);
+    this.playerTurret = new Turret(
+      this,
+      SIDE.PLAYER,
+      this.platformLeftEnd - offset,
+      turretY,
+      this.layoutProfile.turret
+    );
     this.aiTurret = new Turret(this, SIDE.AI, this.platformRightStart + offset, turretY, this.layoutProfile.turret);
     if (this.playerTurrets) this.playerTurrets = [this.playerTurret];
     if (this.aiTurrets) this.aiTurrets = [this.aiTurret];
@@ -394,11 +629,11 @@ export default class GameScene extends Phaser.Scene {
 
   // --- Unit Spawning ---
 
-  requestSpawn(type) {
+  requestSpawn(type: string): void {
     this.spawnDevUnits(type, SIDE.PLAYER, 1);
   }
 
-  spawnDevUnits(type, side = SIDE.PLAYER, count = 1) {
+  spawnDevUnits(type: string, side: Side = SIDE.PLAYER, count = 1): boolean {
     if (this.isGameOver) return false;
     if (!UNIT_TYPES[type]) return false;
     const total = Phaser.Math.Clamp(Number(count) || 1, 1, 24);
@@ -416,7 +651,8 @@ export default class GameScene extends Phaser.Scene {
     return spawned > 0;
   }
 
-  spawnUnit(type, side, options = {}) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  spawnUnit(type: string, side: Side, options: any = {}): boolean {
     if (this.isGameOver) return false;
     const { payCost = true, offset = 0, presenceMult = 1, modifiers = {} } = options;
     const config = UNIT_TYPES[type];
@@ -443,7 +679,7 @@ export default class GameScene extends Phaser.Scene {
     return true;
   }
 
-  spawnPulse(x, y, color) {
+  spawnPulse(x: number, y: number, color: number): void {
     const ring = this.add.circle(x, y, 10, color, 0.4);
     this.tweens.add({
       targets: ring,
@@ -454,7 +690,7 @@ export default class GameScene extends Phaser.Scene {
     });
   }
 
-  spawnCallout(x, y, text, side) {
+  spawnCallout(x: number, y: number, text: string, side: Side): void {
     const label = this.add.text(x, y, text, {
       fontFamily: "Cinzel",
       fontSize: "14px",
@@ -473,7 +709,7 @@ export default class GameScene extends Phaser.Scene {
 
   // --- Abilities ---
 
-  requestAbility(id) {
+  requestAbility(id: AbilityId): void {
     if (this.isGameOver) return;
     const ability = ABILITIES[id];
     if (!ability) return;
@@ -481,15 +717,15 @@ export default class GameScene extends Phaser.Scene {
     this.abilityCooldowns[id] = ability.cooldown;
 
     if (id === "healWave") {
-      this.castleHealWave(this.playerCastle, ability);
+      this.castleHealWave(this.playerCastle, ability as import("../types").HealWaveAbility);
     }
     if (id === "pulse") {
-      this.castlePulse(this.playerCastle, ability);
+      this.castlePulse(this.playerCastle, ability as import("../types").PulseAbility);
     }
     this.events.emit("log", { type: "ability", name: ability.name });
   }
 
-  castleHealWave(castle, ability) {
+  castleHealWave(castle: Castle, ability: import("../types").HealWaveAbility): void {
     const radius = Math.max(this.playArea.width, this.playArea.height) * 0.75;
     const wave = this.add.circle(castle.x, castle.y, 20, 0x9fd6aa, 0.5);
     this.tweens.add({
@@ -519,7 +755,7 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  castlePulse(castle, ability) {
+  castlePulse(castle: Castle, ability: import("../types").PulseAbility): void {
     const zone = this.getPlatformZone(SIDE.PLAYER, 40);
     const centerX = zone.x + zone.width / 2;
     const pulse = this.add.circle(centerX, castle.y, 30, 0xffd58a, 0.4);
@@ -555,7 +791,7 @@ export default class GameScene extends Phaser.Scene {
 
   // --- Control Points ---
 
-  updateControlPoints() {
+  updateControlPoints(): void {
     let playerCount = 0;
     let aiCount = 0;
 
@@ -590,7 +826,7 @@ export default class GameScene extends Phaser.Scene {
 
       if (point.owner !== prevOwner) {
         this.events.emit("log", { type: "point", index: point.index, owner: point.owner });
-        const pulseTargets = [point.marker];
+        const pulseTargets: (Phaser.GameObjects.Arc | Phaser.GameObjects.Image)[] = [point.marker];
         if (point.rune) pulseTargets.push(point.rune);
         if (point.glow) pulseTargets.push(point.glow);
         this.tweens.add({ targets: pulseTargets, alpha: 0.95, duration: 140, yoyo: true });
@@ -613,7 +849,7 @@ export default class GameScene extends Phaser.Scene {
       }
     }
 
-    let newOwner = "neutral";
+    let newOwner: Side | "neutral" = "neutral";
     if (playerCount > aiCount) newOwner = SIDE.PLAYER;
     if (aiCount > playerCount) newOwner = SIDE.AI;
 
@@ -627,9 +863,9 @@ export default class GameScene extends Phaser.Scene {
 
   // --- Ghost Formation ---
 
-  createGhostFormation() {
-    const rows = ["front", "mid", "rear"];
-    this.ghostFormation = { rows: {} };
+  createGhostFormation(): void {
+    const rows = ["front", "mid", "rear"] as const;
+    this.ghostFormation = { rows: { front: [], mid: [], rear: [] } };
     for (const row of rows) {
       const count = this.waveSlots[row] || 0;
       this.ghostFormation.rows[row] = [];
@@ -643,11 +879,11 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  updateGhostFormation() {
+  updateGhostFormation(): void {
     if (!this.ghostFormation) return;
     const draft = this.playerDraft;
     const zone = this.getPlatformZone(SIDE.PLAYER, 0);
-    const rows = ["front", "mid", "rear"];
+    const rows = ["front", "mid", "rear"] as const;
 
     const rowX = {
       rear: zone.x + zone.width * 0.22,
@@ -685,19 +921,19 @@ export default class GameScene extends Phaser.Scene {
 
   // --- UI State ---
 
-  getIncomeDetails(side) {
+  getIncomeDetails(side: Side): IncomeDetails {
     return this.economy.getIncomeDetails(side);
   }
 
-  getRerollCost(side) {
+  getRerollCost(side: Side): number {
     return this.shopManager.getRerollCost(side);
   }
 
-  getWaveInterval(elapsed) {
+  getWaveInterval(elapsed: number): number {
     return this.waveManager.getWaveInterval(elapsed);
   }
 
-  buildUiState() {
+  buildUiState(): UiState {
     const stageIndex = this.waveManager.getStageIndex(this.matchTime);
     return {
       playerResources: this.economy.playerResources,
@@ -725,7 +961,10 @@ export default class GameScene extends Phaser.Scene {
       shop: {
         offers: this.shopManager.getShop(SIDE.PLAYER)?.offers || [],
         rerollCost: this.shopManager.getRerollCost(SIDE.PLAYER),
-        canReroll: this.economy.canAfford(SIDE.PLAYER, this.shopManager.getRerollCost(SIDE.PLAYER)) && !this.isGameOver && !this.waveManager.waveLocked
+        canReroll:
+          this.economy.canAfford(SIDE.PLAYER, this.shopManager.getRerollCost(SIDE.PLAYER)) &&
+          !this.isGameOver &&
+          !this.waveManager.waveLocked
       },
       waveDraft: this.waveManager.playerDraft,
       waveSupply: this.waveManager.waveSupply,
@@ -736,13 +975,13 @@ export default class GameScene extends Phaser.Scene {
     };
   }
 
-  emitUiState() {
+  emitUiState(): void {
     this.events.emit("ui-state", this.buildUiState());
   }
 
   // --- Utility ---
 
-  getPlatformZone(side, extra = 0) {
+  getPlatformZone(side: Side, extra = 0): Phaser.Geom.Rectangle {
     const height = 90;
     if (side === SIDE.PLAYER) {
       return new Phaser.Geom.Rectangle(
@@ -760,7 +999,7 @@ export default class GameScene extends Phaser.Scene {
     );
   }
 
-  cleanupUnits() {
+  cleanupUnits(): void {
     const beforePlayer = this.playerUnits.length;
     const beforeAi = this.aiUnits.length;
 
@@ -783,7 +1022,7 @@ export default class GameScene extends Phaser.Scene {
     this.economy.addKillBounty(SIDE.PLAYER, deadAi);
   }
 
-  checkGameOver() {
+  checkGameOver(): void {
     if (this.playerCastle.hp <= 0 || this.aiCastle.hp <= 0) {
       this.isGameOver = true;
       const winner = this.playerCastle.hp <= 0 ? "AI" : "Player";
@@ -798,7 +1037,7 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  clearCombatUnits() {
+  clearCombatUnits(): void {
     for (const unit of this.playerUnits || []) unit.destroy();
     for (const unit of this.aiUnits || []) unit.destroy();
     this.playerUnits = [];
@@ -807,10 +1046,10 @@ export default class GameScene extends Phaser.Scene {
 
   // --- Layout ---
 
-  computeBoardLayout() {
+  computeBoardLayout(): void {
     const profile = this.layoutProfile;
     const mirrorCenterX = this.playArea.x + this.playArea.width / 2;
-    const mirrorX = (x) => mirrorCenterX * 2 - x;
+    const mirrorX = (x: number) => mirrorCenterX * 2 - x;
 
     if (profile.mirrorMode) {
       profile.castle.aiX = mirrorX(profile.castle.playerX);
@@ -820,9 +1059,15 @@ export default class GameScene extends Phaser.Scene {
       profile.decks.spawn.rightEnd = mirrorX(profile.decks.spawn.leftStart);
     }
 
-    profile.decks.foundation.leftEnd = Math.max(profile.decks.foundation.leftEnd, profile.decks.foundation.leftStart + 30);
+    profile.decks.foundation.leftEnd = Math.max(
+      profile.decks.foundation.leftEnd,
+      profile.decks.foundation.leftStart + 30
+    );
     profile.decks.spawn.leftEnd = Math.max(profile.decks.spawn.leftEnd, profile.decks.spawn.leftStart + 30);
-    profile.decks.foundation.rightEnd = Math.max(profile.decks.foundation.rightEnd, profile.decks.foundation.rightStart + 30);
+    profile.decks.foundation.rightEnd = Math.max(
+      profile.decks.foundation.rightEnd,
+      profile.decks.foundation.rightStart + 30
+    );
     profile.decks.spawn.rightEnd = Math.max(profile.decks.spawn.rightEnd, profile.decks.spawn.rightStart + 30);
 
     this.castleXLeft = profile.castle.playerX;
@@ -834,10 +1079,7 @@ export default class GameScene extends Phaser.Scene {
     this.castleBaseCenterYOffset = profile.castle.baseCenterYOffset;
 
     this.castleFootY =
-      this.castleAnchorY +
-      this.castleBaseCenterYOffset +
-      this.castleBaseHeight / 2 -
-      CASTLE_METRICS.baseFootInset;
+      this.castleAnchorY + this.castleBaseCenterYOffset + this.castleBaseHeight / 2 - CASTLE_METRICS.baseFootInset;
 
     this.foundationDeckY = profile.decks.foundation.topY;
     this.foundationDeckHeight = profile.decks.foundation.height;
@@ -881,18 +1123,32 @@ export default class GameScene extends Phaser.Scene {
     };
   }
 
-  drawDeckSegment(startX, endX, topY, height, depth, hasPlatformTexture) {
+  drawDeckSegment(
+    startX: number,
+    endX: number,
+    topY: number,
+    height: number,
+    depth: number,
+    hasPlatformTexture: boolean
+  ): void {
     const width = endX - startX;
     const centerX = (startX + endX) / 2;
     const centerY = topY + height / 2;
     if (hasPlatformTexture) {
-      this.addBridgeVisual(this.add.image(centerX, centerY, "platform_stone").setDisplaySize(width + 16, height).setDepth(depth));
+      this.addBridgeVisual(
+        this.add
+          .image(centerX, centerY, "platform_stone")
+          .setDisplaySize(width + 16, height)
+          .setDepth(depth)
+      );
       return;
     }
-    this.addBridgeVisual(this.add.rectangle(centerX, centerY, width, height, 0x3a3430).setStrokeStyle(2, 0x241b18, 1).setDepth(depth));
+    this.addBridgeVisual(
+      this.add.rectangle(centerX, centerY, width, height, 0x3a3430).setStrokeStyle(2, 0x241b18, 1).setDepth(depth)
+    );
   }
 
-  loadLayoutProfile() {
+  loadLayoutProfile(): void {
     if (typeof window === "undefined") return;
     try {
       const raw = window.localStorage.getItem(LAYOUT_STORAGE_KEY);
@@ -917,7 +1173,7 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  saveLayoutProfile() {
+  saveLayoutProfile(): void {
     if (typeof window === "undefined") return;
     try {
       window.localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(this.layoutProfile));
@@ -926,7 +1182,7 @@ export default class GameScene extends Phaser.Scene {
     }
   }
 
-  exportLayoutProfile() {
+  exportLayoutProfile(): string {
     const text = JSON.stringify(this.layoutProfile, null, 2);
     if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
       navigator.clipboard.writeText(text).catch(() => {});
@@ -934,33 +1190,35 @@ export default class GameScene extends Phaser.Scene {
     return text;
   }
 
-  addBridgeVisual(obj) {
-    this.bridgeVisuals.push(obj);
+  addBridgeVisual(obj: Phaser.GameObjects.GameObject): Phaser.GameObjects.GameObject {
+    this.bridgeVisuals.push(obj as any);
     return obj;
   }
 
-  clearBridgeVisuals() {
+  clearBridgeVisuals(): void {
     for (const obj of this.bridgeVisuals || []) {
       obj.destroy();
     }
     this.bridgeVisuals = [];
   }
 
-  destroyCastles() {
+  destroyCastles(): void {
     this.playerCastle?.destroy();
     this.aiCastle?.destroy();
+    // @ts-expect-error reset
     this.playerCastle = null;
+    // @ts-expect-error reset
     this.aiCastle = null;
   }
 
-  destroyTurrets() {
+  destroyTurrets(): void {
     if (this.playerTurret) this.playerTurret.destroy();
     if (this.aiTurret) this.aiTurret.destroy();
     this.playerTurret = null;
     this.aiTurret = null;
   }
 
-  rebuildLayoutVisuals() {
+  rebuildLayoutVisuals(): void {
     this.clearBridgeVisuals();
     this.destroyCastles();
     this.destroyTurrets();

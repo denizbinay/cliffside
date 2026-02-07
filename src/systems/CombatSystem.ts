@@ -1,13 +1,40 @@
-import { SIDE, WAVE_CONFIG } from "../config/GameConfig.js";
+import { SIDE, WAVE_CONFIG } from "../config/GameConfig";
+import type Unit from "../entities/Unit";
+import type Turret from "../entities/Turret";
+import type Castle from "../entities/Castle";
+import type EconomySystem from "./EconomySystem";
+import type WaveManager from "./WaveManager";
+
+interface CombatScene {
+  playerUnits: Unit[];
+  aiUnits: Unit[];
+  playerTurrets: (Turret | null)[];
+  aiTurrets: (Turret | null)[];
+  playerCastle: Castle;
+  aiCastle: Castle;
+  economy: EconomySystem;
+  waveManager: WaveManager;
+  isGameOver: boolean;
+  time: Phaser.Time.Clock;
+  events: Phaser.Events.EventEmitter;
+}
 
 export default class CombatSystem {
-  constructor(scene) {
+  scene: CombatScene;
+
+  constructor(scene: CombatScene) {
     this.scene = scene;
   }
 
-  update(delta) {
-    const playerUnitEnemies = [...this.scene.aiUnits, ...this.scene.aiTurrets.filter((t) => t && t.isAlive())];
-    const aiUnitEnemies = [...this.scene.playerUnits, ...this.scene.playerTurrets.filter((t) => t && t.isAlive())];
+  update(delta: number): void {
+    const playerUnitEnemies = [
+      ...this.scene.aiUnits,
+      ...this.scene.aiTurrets.filter((t): t is Turret => t !== null && t.isAlive())
+    ];
+    const aiUnitEnemies = [
+      ...this.scene.playerUnits,
+      ...this.scene.playerTurrets.filter((t): t is Turret => t !== null && t.isAlive())
+    ];
 
     for (const unit of this.scene.playerUnits) {
       unit.update(delta, playerUnitEnemies, this.scene.playerUnits, this.scene.aiCastle);
@@ -28,7 +55,7 @@ export default class CombatSystem {
     }
   }
 
-  cleanupUnits() {
+  cleanupUnits(): void {
     const beforePlayer = this.scene.playerUnits.length;
     const beforeAi = this.scene.aiUnits.length;
 
@@ -50,11 +77,11 @@ export default class CombatSystem {
     this.scene.economy.addKillBounty(SIDE.PLAYER, deadAi);
   }
 
-  applyWaveLock(countdown) {
+  applyWaveLock(countdown: number): void {
     this.scene.waveManager.waveLocked = countdown <= WAVE_CONFIG.lockSeconds;
   }
 
-  checkGameOver() {
+  checkGameOver(): void {
     if (this.scene.playerCastle.hp <= 0 || this.scene.aiCastle.hp <= 0) {
       this.scene.isGameOver = true;
       const winner = this.scene.playerCastle.hp <= 0 ? "AI" : "Player";

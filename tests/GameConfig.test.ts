@@ -10,7 +10,7 @@ import {
   AI_CONFIG,
   PHASE_LABELS,
   createDefaultLayoutProfile
-} from "../src/config/GameConfig.js";
+} from "../src/config/GameConfig";
 
 describe("GameConfig", () => {
   it("SIDE has player and ai", () => {

@@ -1,12 +1,34 @@
 import Phaser from "phaser";
-import { UNIT_ANIMATION_ASSETS } from "../data/unitAnimationProfiles.js";
+import { UNIT_ANIMATION_ASSETS } from "../data/unitAnimationProfiles";
+import type { AnimationSheetDef, KeyedStripSheetDef, SpritesheetDef, AtlasSheetDef } from "../types";
+
+function isKeyedStrip(def: AnimationSheetDef): def is KeyedStripSheetDef {
+  return "sourceKey" in def && "outputKey" in def;
+}
+
+function isSpritesheet(def: AnimationSheetDef): def is SpritesheetDef {
+  return "sheetKey" in def && "frameWidth" in def;
+}
+
+function isAtlas(def: AnimationSheetDef): def is AtlasSheetDef {
+  return "atlasKey" in def;
+}
+
+interface FrameConfig {
+  frameWidth: number;
+  frameHeight: number;
+  margin: number;
+  spacing: number;
+  startFrame: number;
+  endFrame: number;
+}
 
 export default class PreloadScene extends Phaser.Scene {
   constructor() {
     super("Preload");
   }
 
-  preload() {
+  preload(): void {
     // Environment
     this.load.setPath("assets/environment/");
     this.load.image("bg_sky", "bg_sky_mountains.png");
@@ -43,13 +65,13 @@ export default class PreloadScene extends Phaser.Scene {
 
     // Units
     this.load.setPath("assets/units/");
-    const loadedImages = new Set();
-    const loadedJson = new Set();
-    const loadedAtlases = new Set();
-    const loadedSheets = new Set();
+    const loadedImages = new Set<string>();
+    const loadedJson = new Set<string>();
+    const loadedAtlases = new Set<string>();
+    const loadedSheets = new Set<string>();
     Object.values(UNIT_ANIMATION_ASSETS).forEach((unitDef) => {
       Object.values(unitDef.sheets || {}).forEach((sheetDef) => {
-        if (sheetDef.sheetKey && sheetDef.sheetFile && Number.isFinite(sheetDef.frameWidth) && Number.isFinite(sheetDef.frameHeight) && !loadedSheets.has(sheetDef.sheetKey)) {
+        if (isSpritesheet(sheetDef) && !loadedSheets.has(sheetDef.sheetKey)) {
           this.load.spritesheet(sheetDef.sheetKey, sheetDef.sheetFile, {
             frameWidth: sheetDef.frameWidth,
             frameHeight: sheetDef.frameHeight
@@ -58,25 +80,27 @@ export default class PreloadScene extends Phaser.Scene {
           return;
         }
 
-        if (sheetDef.atlasKey && sheetDef.atlasTextureFile && sheetDef.atlasDataFile && !loadedAtlases.has(sheetDef.atlasKey)) {
+        if (isAtlas(sheetDef) && !loadedAtlases.has(sheetDef.atlasKey)) {
           this.load.atlas(sheetDef.atlasKey, sheetDef.atlasTextureFile, sheetDef.atlasDataFile);
           loadedAtlases.add(sheetDef.atlasKey);
           return;
         }
 
-        if (sheetDef.sourceKey && sheetDef.sourceFile && !loadedImages.has(sheetDef.sourceKey)) {
-          this.load.image(sheetDef.sourceKey, sheetDef.sourceFile);
-          loadedImages.add(sheetDef.sourceKey);
-        }
-        if (sheetDef.boxesKey && sheetDef.boxesFile && !loadedJson.has(sheetDef.boxesKey)) {
-          this.load.json(sheetDef.boxesKey, sheetDef.boxesFile);
-          loadedJson.add(sheetDef.boxesKey);
+        if (isKeyedStrip(sheetDef)) {
+          if (sheetDef.sourceKey && sheetDef.sourceFile && !loadedImages.has(sheetDef.sourceKey)) {
+            this.load.image(sheetDef.sourceKey, sheetDef.sourceFile);
+            loadedImages.add(sheetDef.sourceKey);
+          }
+          if (sheetDef.boxesKey && sheetDef.boxesFile && !loadedJson.has(sheetDef.boxesKey)) {
+            this.load.json(sheetDef.boxesKey, sheetDef.boxesFile);
+            loadedJson.add(sheetDef.boxesKey);
+          }
         }
       });
     });
   }
 
-  create() {
+  create(): void {
     this.createTurretHeadKeyedTexture();
 
     // Create minimal placeholder texture for missing assets
@@ -100,9 +124,9 @@ export default class PreloadScene extends Phaser.Scene {
     this.scene.start("Game");
   }
 
-  createTurretHeadKeyedTexture() {
+  createTurretHeadKeyedTexture(): void {
     if (!this.textures.exists("turret_head_raw")) return;
-    const sourceImage = this.textures.get("turret_head_raw").getSourceImage();
+    const sourceImage = this.textures.get("turret_head_raw").getSourceImage() as HTMLImageElement;
     if (!sourceImage?.width || !sourceImage?.height) return;
 
     const width = sourceImage.width;
@@ -117,12 +141,7 @@ export default class PreloadScene extends Phaser.Scene {
     const imageData = ctx.getImageData(0, 0, width, height);
     const data = imageData.data;
 
-    const corners = [
-      0,
-      (width - 1) * 4,
-      (height - 1) * width * 4,
-      ((height - 1) * width + (width - 1)) * 4
-    ];
+    const corners = [0, (width - 1) * 4, (height - 1) * width * 4, ((height - 1) * width + (width - 1)) * 4];
     let keyR = 0;
     let keyG = 0;
     let keyB = 0;
@@ -172,51 +191,68 @@ export default class PreloadScene extends Phaser.Scene {
     keyed.refresh();
   }
 
-  createUnitAnimations() {
+  createUnitAnimations(): void {
     Object.entries(UNIT_ANIMATION_ASSETS).forEach(([unitId, unitDef]) => {
       Object.entries(unitDef.sheets || {}).forEach(([action, sheetDef]) => {
-        const textureKey = sheetDef.outputKey || sheetDef.sheetKey || sheetDef.atlasKey;
+        const textureKey = isKeyedStrip(sheetDef)
+          ? sheetDef.outputKey
+          : isSpritesheet(sheetDef)
+            ? sheetDef.sheetKey
+            : isAtlas(sheetDef)
+              ? sheetDef.atlasKey
+              : null;
         if (!textureKey || !this.textures.exists(textureKey)) return;
         const key = `${unitId}_${action}`;
         if (this.anims.exists(key)) return;
 
-        const frames = Array.isArray(sheetDef.frameSequence)
-          ? sheetDef.frameSequence.map((frame) => ({ key: textureKey, frame: sheetDef.atlasKey ? String(frame) : frame }))
-          : sheetDef.atlasKey
-          ? this.anims.generateFrameNames(textureKey, {
-              start: sheetDef.startFrame ?? 0,
-              end: sheetDef.endFrame ?? this.getSpriteSheetFrameCount(textureKey) - 1,
-              prefix: sheetDef.framePrefix ?? "",
-              suffix: sheetDef.frameSuffix ?? ""
-            })
-          : this.anims.generateFrameNumbers(textureKey, {
-              start: sheetDef.startFrame ?? 0,
-              end: sheetDef.endFrame ?? this.getSpriteSheetFrameCount(textureKey) - 1
-            });
+        const hasFrameSequence = isSpritesheet(sheetDef) && Array.isArray(sheetDef.frameSequence);
+        const frames = hasFrameSequence
+          ? (sheetDef as SpritesheetDef).frameSequence!.map((frame) => ({
+              key: textureKey,
+              frame: isAtlas(sheetDef) ? String(frame) : frame
+            }))
+          : isAtlas(sheetDef)
+            ? this.anims.generateFrameNames(textureKey, {
+                start: sheetDef.startFrame ?? 0,
+                end: sheetDef.endFrame ?? this.getSpriteSheetFrameCount(textureKey) - 1,
+                prefix: sheetDef.framePrefix ?? "",
+                suffix: sheetDef.frameSuffix ?? ""
+              })
+            : this.anims.generateFrameNumbers(textureKey, {
+                start:
+                  (isSpritesheet(sheetDef) ? sheetDef.startFrame : isKeyedStrip(sheetDef) ? undefined : undefined) ?? 0,
+                end:
+                  (isSpritesheet(sheetDef) ? sheetDef.endFrame : undefined) ??
+                  this.getSpriteSheetFrameCount(textureKey) - 1
+              });
 
         if (!frames?.length) return;
+
+        const yoyo =
+          (isSpritesheet(sheetDef) || isAtlas(sheetDef)) && "yoyo" in sheetDef ? sheetDef.yoyo === true : false;
 
         this.anims.create({
           key,
           frames,
           frameRate: sheetDef.fps ?? 10,
           repeat: sheetDef.repeat ?? 0,
-          yoyo: sheetDef.yoyo === true
+          yoyo
         });
       });
     });
   }
 
-  createUnitAnimationSheets() {
+  createUnitAnimationSheets(): void {
     Object.values(UNIT_ANIMATION_ASSETS).forEach((unitDef) => {
       Object.values(unitDef.sheets || {}).forEach((sheetDef) => {
+        if (!isKeyedStrip(sheetDef)) return;
         const sourceKey = sheetDef.sourceKey;
         const outputKey = sheetDef.outputKey;
-        if (sheetDef.atlasKey) return;
+        if (isAtlas(sheetDef as AnimationSheetDef)) return;
         if (!sourceKey || !outputKey || this.textures.exists(outputKey)) return;
 
         if (unitDef.preprocess === "bbox-aligned-rgba") {
-          this.createAlignedSpriteSheetFromBoxes(sourceKey, sheetDef.boxesKey, outputKey);
+          this.createAlignedSpriteSheetFromBoxes(sourceKey, sheetDef.boxesKey!, outputKey);
           return;
         }
 
@@ -227,37 +263,53 @@ export default class PreloadScene extends Phaser.Scene {
     });
   }
 
-  createAlignedSpriteSheetFromBoxes(sourceKey, boxesKey, outputKey) {
+  createAlignedSpriteSheetFromBoxes(sourceKey: string, boxesKey: string, outputKey: string): void {
     if (!this.textures.exists(sourceKey) || this.textures.exists(outputKey)) return;
     const rawBoxes = this.cache.json.get(boxesKey);
     if (!Array.isArray(rawBoxes) || rawBoxes.length === 0) return;
 
-    const boxes = rawBoxes
-      .filter((entry) => Number.isFinite(entry?.x) && Number.isFinite(entry?.y) && Number.isFinite(entry?.width) && Number.isFinite(entry?.height))
-      .sort((a, b) => (a.frameIndex ?? 0) - (b.frameIndex ?? 0));
+    interface BoxEntry {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      frameIndex?: number;
+      originalX?: number;
+      originalY?: number;
+    }
+
+    const boxes: BoxEntry[] = rawBoxes
+      .filter(
+        (entry: BoxEntry) =>
+          Number.isFinite(entry?.x) &&
+          Number.isFinite(entry?.y) &&
+          Number.isFinite(entry?.width) &&
+          Number.isFinite(entry?.height)
+      )
+      .sort((a: BoxEntry, b: BoxEntry) => (a.frameIndex ?? 0) - (b.frameIndex ?? 0));
     if (!boxes.length) return;
 
-    const sourceImage = this.textures.get(sourceKey).getSourceImage();
+    const sourceImage = this.textures.get(sourceKey).getSourceImage() as HTMLImageElement;
     if (!sourceImage?.width || !sourceImage?.height) return;
 
     const hasOriginalPlacement = boxes.every((box) => Number.isFinite(box.originalX) && Number.isFinite(box.originalY));
 
     if (hasOriginalPlacement) {
-      const frameWidth = Math.max(...boxes.map((box) => Math.ceil(box.originalX + box.width)));
-      const frameHeight = Math.max(...boxes.map((box) => Math.ceil(box.originalY + box.height)));
+      const frameWidth = Math.max(...boxes.map((box) => Math.ceil(box.originalX! + box.width)));
+      const frameHeight = Math.max(...boxes.map((box) => Math.ceil(box.originalY! + box.height)));
       const frameCount = boxes.length;
 
       this.createPackedSpriteSheet(outputKey, frameWidth, frameHeight, frameCount, (ctx, index, frameX, frameY) => {
         const box = boxes[index];
-        const destX = Math.round(frameX + box.originalX);
-        const destY = Math.round(frameY + box.originalY);
+        const destX = Math.round(frameX + box.originalX!);
+        const destY = Math.round(frameY + box.originalY!);
         ctx.drawImage(sourceImage, box.x, box.y, box.width, box.height, destX, destY, box.width, box.height);
       });
       return;
     }
 
-    const getAlignX = (box) => (Number.isFinite(box.originalX) ? box.originalX : box.x);
-    const getAlignY = (box) => (Number.isFinite(box.originalY) ? box.originalY : box.y);
+    const getAlignX = (box: BoxEntry): number => (Number.isFinite(box.originalX) ? box.originalX! : box.x);
+    const getAlignY = (box: BoxEntry): number => (Number.isFinite(box.originalY) ? box.originalY! : box.y);
 
     const centers = boxes.map((box) => getAlignX(box) + box.width * 0.5);
     const bottoms = boxes.map((box) => getAlignY(box) + box.height);
@@ -289,10 +341,26 @@ export default class PreloadScene extends Phaser.Scene {
     });
   }
 
-  createPackedSpriteSheet(outputKey, frameWidth, frameHeight, frameCount, drawFrame) {
-    if (!Number.isFinite(frameWidth) || !Number.isFinite(frameHeight) || frameWidth <= 0 || frameHeight <= 0 || frameCount <= 0) return;
+  createPackedSpriteSheet(
+    outputKey: string,
+    frameWidth: number,
+    frameHeight: number,
+    frameCount: number,
+    drawFrame: (ctx: CanvasRenderingContext2D, index: number, frameX: number, frameY: number) => void
+  ): void {
+    if (
+      !Number.isFinite(frameWidth) ||
+      !Number.isFinite(frameHeight) ||
+      frameWidth <= 0 ||
+      frameHeight <= 0 ||
+      frameCount <= 0
+    )
+      return;
 
-    const maxTextureSize = Math.max(1024, this.game?.renderer?.maxTextureSize || 4096);
+    const maxTextureSize = Math.max(
+      1024,
+      (this.game?.renderer as unknown as { maxTextureSize?: number })?.maxTextureSize || 4096
+    );
     const columns = Math.max(1, Math.min(frameCount, Math.floor(maxTextureSize / frameWidth) || 1));
     const rows = Math.ceil(frameCount / columns);
     const sheetWidth = frameWidth * columns;
@@ -313,7 +381,7 @@ export default class PreloadScene extends Phaser.Scene {
     }
 
     sheetCanvas.refresh();
-    this.textures.addSpriteSheet(outputKey, sheetCanvas.getSourceImage(), {
+    this.textures.addSpriteSheet(outputKey, sheetCanvas.getSourceImage() as any, {
       frameWidth,
       frameHeight,
       margin: 0,
@@ -323,16 +391,16 @@ export default class PreloadScene extends Phaser.Scene {
     });
   }
 
-  getSpriteSheetFrameCount(textureKey) {
+  getSpriteSheetFrameCount(textureKey: string): number {
     if (!this.textures.exists(textureKey)) return 0;
     const texture = this.textures.get(textureKey);
     if (!texture?.frames) return 0;
     return Object.keys(texture.frames).filter((name) => name !== "__BASE").length;
   }
 
-  getAutoSheetFrameConfig(sourceKey) {
+  getAutoSheetFrameConfig(sourceKey: string): FrameConfig | null {
     if (!this.textures.exists(sourceKey)) return null;
-    const sourceImage = this.textures.get(sourceKey).getSourceImage();
+    const sourceImage = this.textures.get(sourceKey).getSourceImage() as HTMLImageElement;
     if (!sourceImage?.width || !sourceImage?.height) return null;
 
     const width = sourceImage.width;
@@ -354,15 +422,15 @@ export default class PreloadScene extends Phaser.Scene {
     const minFrames = 4;
     const maxFrames = 24;
 
-    let best = null;
+    let best: { frames: number; frameWidth: number; score: number } | null = null;
     for (let frames = minFrames; frames <= maxFrames; frames += 1) {
       if (width % frames !== 0) continue;
-      const frameWidth = width / frames;
-      if (frameWidth < 96 || frameWidth > 768) continue;
+      const fw = width / frames;
+      if (fw < 96 || fw > 768) continue;
 
-      const score = Math.abs(frameWidth - height);
+      const score = Math.abs(fw - height);
       if (!best || score < best.score) {
-        best = { frames, frameWidth, score };
+        best = { frames, frameWidth: fw, score };
       }
     }
 
@@ -378,11 +446,11 @@ export default class PreloadScene extends Phaser.Scene {
     };
   }
 
-  createKeyedSpriteSheet(sourceKey, outputKey, frameConfig) {
+  createKeyedSpriteSheet(sourceKey: string, outputKey: string, frameConfig: FrameConfig): void {
     if (!this.textures.exists(sourceKey)) return;
     if (this.textures.exists(outputKey)) return;
 
-    const sourceImage = this.textures.get(sourceKey).getSourceImage();
+    const sourceImage = this.textures.get(sourceKey).getSourceImage() as HTMLImageElement;
     if (!sourceImage?.width || !sourceImage?.height) return;
 
     const width = sourceImage.width;
@@ -433,6 +501,6 @@ export default class PreloadScene extends Phaser.Scene {
     ctx.putImageData(imageData, 0, 0);
     keyedCanvas.refresh();
 
-    this.textures.addSpriteSheet(outputKey, keyedCanvas.getSourceImage(), frameConfig);
+    this.textures.addSpriteSheet(outputKey, keyedCanvas.getSourceImage() as any, frameConfig);
   }
 }

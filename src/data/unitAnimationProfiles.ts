@@ -1,4 +1,6 @@
-export const UNIT_ANIMATION_ASSETS = {
+import type { UnitAnimationAsset, UnitAnimationProfile } from "../types";
+
+export const UNIT_ANIMATION_ASSETS: Record<string, UnitAnimationAsset> = {
   breaker: {
     preprocess: "keyed-strip",
     sheets: {
@@ -94,7 +96,7 @@ export const UNIT_ANIMATION_ASSETS = {
   }
 };
 
-export const UNIT_ANIMATION_PROFILES = {
+export const UNIT_ANIMATION_PROFILES: Record<string, UnitAnimationProfile> = {
   breaker: {
     textureKey: "breaker_idle_sheet",
     sizeScale: 2.05,

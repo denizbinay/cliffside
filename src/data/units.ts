@@ -1,4 +1,6 @@
-export const UNIT_TYPES = {
+import type { UnitTypesMap } from "../types";
+
+export const UNIT_TYPES: UnitTypesMap = {
   guard: {
     id: "guard",
     name: "Guard",

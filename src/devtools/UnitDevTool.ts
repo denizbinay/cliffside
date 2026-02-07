@@ -1,9 +1,29 @@
 import Phaser from "phaser";
-import { UNIT_TYPES } from "../data/units.js";
-import { SIDE } from "../config/GameConfig.js";
+import { UNIT_TYPES } from "../data/units";
+import { SIDE } from "../config/GameConfig";
+import type { Side } from "../types";
+import type GameScene from "../scenes/GameScene";
 
 export default class UnitDevTool {
-  constructor(scene) {
+  scene: GameScene;
+  enabled: boolean;
+  selectedUnitId: string | null;
+  selectedSide: Side;
+  spawnCount: number;
+  unitIds: string[];
+  panel: HTMLElement | null;
+  toggleKey: Phaser.Input.Keyboard.Key | null;
+  keys:
+    | {
+        enter: Phaser.Input.Keyboard.Key;
+        left: Phaser.Input.Keyboard.Key;
+        right: Phaser.Input.Keyboard.Key;
+        p: Phaser.Input.Keyboard.Key;
+        o: Phaser.Input.Keyboard.Key;
+      }
+    | Record<string, never>;
+
+  constructor(scene: GameScene) {
     this.scene = scene;
     this.enabled = false;
     this.selectedUnitId = null;
@@ -15,7 +35,7 @@ export default class UnitDevTool {
     this.keys = {};
   }
 
-  setup() {
+  setup(): void {
     if (!this.scene.input?.keyboard) return;
 
     this.unitIds = Object.values(UNIT_TYPES)
@@ -36,32 +56,40 @@ export default class UnitDevTool {
     this.createPanel();
   }
 
-  handleInput() {
+  handleInput(): void {
     if (this.toggleKey && Phaser.Input.Keyboard.JustDown(this.toggleKey)) {
       this.toggle();
     }
     if (!this.enabled || !this.scene.input?.keyboard || this.isTypingInInput()) return;
 
-    if (this.keys.left && Phaser.Input.Keyboard.JustDown(this.keys.left)) {
+    const keys = this.keys as {
+      enter: Phaser.Input.Keyboard.Key;
+      left: Phaser.Input.Keyboard.Key;
+      right: Phaser.Input.Keyboard.Key;
+      p: Phaser.Input.Keyboard.Key;
+      o: Phaser.Input.Keyboard.Key;
+    };
+
+    if (keys.left && Phaser.Input.Keyboard.JustDown(keys.left)) {
       this.cycleSelection(-1);
     }
-    if (this.keys.right && Phaser.Input.Keyboard.JustDown(this.keys.right)) {
+    if (keys.right && Phaser.Input.Keyboard.JustDown(keys.right)) {
       this.cycleSelection(1);
     }
-    if (this.keys.p && Phaser.Input.Keyboard.JustDown(this.keys.p)) {
+    if (keys.p && Phaser.Input.Keyboard.JustDown(keys.p)) {
       this.selectedSide = SIDE.PLAYER;
       this.syncPanel();
     }
-    if (this.keys.o && Phaser.Input.Keyboard.JustDown(this.keys.o)) {
+    if (keys.o && Phaser.Input.Keyboard.JustDown(keys.o)) {
       this.selectedSide = SIDE.AI;
       this.syncPanel();
     }
-    if (this.keys.enter && Phaser.Input.Keyboard.JustDown(this.keys.enter)) {
+    if (keys.enter && Phaser.Input.Keyboard.JustDown(keys.enter)) {
       this.spawn();
     }
   }
 
-  isTypingInInput() {
+  isTypingInInput(): boolean {
     if (typeof document === "undefined") return false;
     const active = document.activeElement;
     if (!active) return false;
@@ -69,25 +97,25 @@ export default class UnitDevTool {
     return tag === "input" || tag === "select" || tag === "textarea";
   }
 
-  toggle() {
+  toggle(): void {
     this.enabled = !this.enabled;
     this.syncPanel();
   }
 
-  cycleSelection(step) {
+  cycleSelection(step: number): void {
     if (!this.unitIds?.length) return;
-    const current = Math.max(0, this.unitIds.indexOf(this.selectedUnitId));
+    const current = Math.max(0, this.unitIds.indexOf(this.selectedUnitId!));
     const next = (current + step + this.unitIds.length) % this.unitIds.length;
     this.selectedUnitId = this.unitIds[next];
     this.syncPanel();
   }
 
-  spawn(side = this.selectedSide) {
+  spawn(side: Side = this.selectedSide): void {
     if (!this.selectedUnitId) return;
     this.scene.spawnDevUnits(this.selectedUnitId, side || SIDE.PLAYER, this.spawnCount || 1);
   }
 
-  createPanel() {
+  createPanel(): void {
     if (typeof document === "undefined") return;
     const panel = document.createElement("div");
     panel.id = "unit-dev-panel";
@@ -133,9 +161,9 @@ export default class UnitDevTool {
     `;
     document.body.appendChild(panel);
 
-    const unitSelect = panel.querySelector("[data-unitdev-unit]");
-    const sideSelect = panel.querySelector("[data-unitdev-side]");
-    const countInput = panel.querySelector("[data-unitdev-count]");
+    const unitSelect = panel.querySelector("[data-unitdev-unit]") as HTMLSelectElement;
+    const sideSelect = panel.querySelector("[data-unitdev-side]") as HTMLSelectElement;
+    const countInput = panel.querySelector("[data-unitdev-count]") as HTMLInputElement;
     const spawnBtn = panel.querySelector("[data-unitdev-spawn]");
     const spawnPlayerBtn = panel.querySelector("[data-unitdev-spawn-player]");
     const spawnAiBtn = panel.querySelector("[data-unitdev-spawn-ai]");
@@ -150,16 +178,16 @@ export default class UnitDevTool {
     });
 
     unitSelect?.addEventListener("change", (event) => {
-      this.selectedUnitId = event.target?.value || this.selectedUnitId;
+      this.selectedUnitId = (event.target as HTMLSelectElement)?.value || this.selectedUnitId;
       this.syncPanel();
     });
     sideSelect?.addEventListener("change", (event) => {
-      const value = event.target?.value;
+      const value = (event.target as HTMLSelectElement)?.value;
       this.selectedSide = value === SIDE.AI ? SIDE.AI : SIDE.PLAYER;
       this.syncPanel();
     });
     countInput?.addEventListener("change", (event) => {
-      this.spawnCount = Phaser.Math.Clamp(Number(event.target?.value) || 1, 1, 24);
+      this.spawnCount = Phaser.Math.Clamp(Number((event.target as HTMLInputElement)?.value) || 1, 1, 24);
       this.syncPanel();
     });
     spawnBtn?.addEventListener("click", () => this.spawn());
@@ -170,25 +198,25 @@ export default class UnitDevTool {
     this.syncPanel();
   }
 
-  syncPanel() {
+  syncPanel(): void {
     if (!this.panel) return;
     this.panel.style.display = this.enabled ? "block" : "none";
 
-    const unitSelect = this.panel.querySelector("[data-unitdev-unit]");
-    const sideSelect = this.panel.querySelector("[data-unitdev-side]");
-    const countInput = this.panel.querySelector("[data-unitdev-count]");
+    const unitSelect = this.panel.querySelector("[data-unitdev-unit]") as HTMLSelectElement;
+    const sideSelect = this.panel.querySelector("[data-unitdev-side]") as HTMLSelectElement;
+    const countInput = this.panel.querySelector("[data-unitdev-count]") as HTMLInputElement;
     const info = this.panel.querySelector("[data-unitdev-info]");
 
     if (unitSelect) unitSelect.value = this.selectedUnitId || "";
     if (sideSelect) sideSelect.value = this.selectedSide || SIDE.PLAYER;
     if (countInput) countInput.value = `${this.spawnCount || 1}`;
     if (info) {
-      const unitName = UNIT_TYPES[this.selectedUnitId]?.name || this.selectedUnitId || "none";
+      const unitName = UNIT_TYPES[this.selectedUnitId!]?.name || this.selectedUnitId || "none";
       info.textContent = `Spawning ${this.spawnCount}x ${unitName} for ${this.selectedSide}`;
     }
   }
 
-  destroy() {
+  destroy(): void {
     if (this.panel?.parentElement) {
       this.panel.parentElement.removeChild(this.panel);
     }

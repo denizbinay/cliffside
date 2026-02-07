@@ -1,4 +1,6 @@
-export const STANCES = {
+import type { StancesMap } from "../types";
+
+export const STANCES: StancesMap = {
   normal: {
     id: "normal",
     name: "Normal",

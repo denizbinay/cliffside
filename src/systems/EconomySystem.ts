@@ -1,14 +1,25 @@
-import { SIDE, ECONOMY_CONFIG } from "../config/GameConfig.js";
+import { SIDE, ECONOMY_CONFIG } from "../config/GameConfig";
+import type { Side, IncomeDetails } from "../types";
+
+interface EconomyScene {
+  controlPoints: { owner: Side | "neutral"; index: number }[];
+  events: Phaser.Events.EventEmitter;
+}
 
 export default class EconomySystem {
-  constructor(scene) {
+  scene: EconomyScene;
+  playerResources: number;
+  aiResources: number;
+  resourceAccumulator: number;
+
+  constructor(scene: EconomyScene) {
     this.scene = scene;
     this.playerResources = ECONOMY_CONFIG.startingResources;
     this.aiResources = ECONOMY_CONFIG.startingResources;
     this.resourceAccumulator = 0;
   }
 
-  update(delta) {
+  update(delta: number): void {
     this.resourceAccumulator += delta;
     while (this.resourceAccumulator >= ECONOMY_CONFIG.interestTick) {
       this.resourceAccumulator -= ECONOMY_CONFIG.interestTick;
@@ -16,7 +27,7 @@ export default class EconomySystem {
     }
   }
 
-  gainResources() {
+  gainResources(): void {
     const playerIncome = this.getIncomeDetails(SIDE.PLAYER);
     const aiIncome = this.getIncomeDetails(SIDE.AI);
 
@@ -25,11 +36,11 @@ export default class EconomySystem {
     this.emitResourceUpdate();
   }
 
-  getResources(side) {
+  getResources(side: Side): number {
     return side === SIDE.PLAYER ? this.playerResources : this.aiResources;
   }
 
-  setResources(side, value) {
+  setResources(side: Side, value: number): void {
     if (side === SIDE.PLAYER) {
       this.playerResources = value;
     } else {
@@ -37,7 +48,7 @@ export default class EconomySystem {
     }
   }
 
-  spend(side, amount) {
+  spend(side: Side, amount: number): boolean {
     if (side === SIDE.PLAYER) {
       if (this.playerResources < amount) return false;
       this.playerResources -= amount;
@@ -48,11 +59,11 @@ export default class EconomySystem {
     return true;
   }
 
-  canAfford(side, amount) {
+  canAfford(side: Side, amount: number): boolean {
     return this.getResources(side) >= amount;
   }
 
-  addKillBounty(side, count) {
+  addKillBounty(side: Side, count: number): void {
     const bonus = ECONOMY_CONFIG.killBonus * count;
     if (side === SIDE.PLAYER) {
       this.playerResources += bonus;
@@ -62,7 +73,7 @@ export default class EconomySystem {
     if (count > 0) this.emitResourceUpdate();
   }
 
-  getIncomeDetails(side) {
+  getIncomeDetails(side: Side): IncomeDetails {
     const controlPoints = this.scene.controlPoints || [];
     const ownedPoints = controlPoints.filter((point) => point.owner === side);
     const base = ECONOMY_CONFIG.baseIncome;
@@ -83,12 +94,12 @@ export default class EconomySystem {
     return { base, pointBonus, enemyBonus, interest, total };
   }
 
-  isEnemyPoint(side, index) {
+  isEnemyPoint(side: Side, index: number): boolean {
     if (side === SIDE.PLAYER) return index >= 3;
     return index <= 1;
   }
 
-  emitResourceUpdate() {
+  emitResourceUpdate(): void {
     this.scene.events.emit("resource-update", {
       player: this.playerResources,
       ai: this.aiResources,

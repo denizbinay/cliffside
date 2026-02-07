@@ -1,21 +1,24 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { SIDE, WAVE_CONFIG, PHASE_LABELS } from "../src/config/GameConfig.js";
-import WaveManager from "../src/systems/WaveManager.js";
+import { SIDE, WAVE_CONFIG, PHASE_LABELS } from "../src/config/GameConfig";
+import WaveManager from "../src/systems/WaveManager";
+import type { DraftRow } from "../src/types";
 
 function createMockScene() {
   return {
     isGameOver: false,
     matchTime: 0,
     time: {
-      delayedCall(_delay, callback) { callback(); }
+      delayedCall(_delay: number, callback: () => void) {
+        callback();
+      }
     },
     events: { emit() {} }
   };
 }
 
 describe("WaveManager", () => {
-  let wm;
-  let scene;
+  let wm: WaveManager;
+  let scene: ReturnType<typeof createMockScene>;
 
   beforeEach(() => {
     scene = createMockScene();
@@ -128,10 +131,13 @@ describe("WaveManager", () => {
     wm.playerDraft.front[0] = "guard";
     wm.playerDraft.mid[0] = "archer";
     scene.matchTime = 0;
-    const result = wm.moveQueuedUnit({
-      from: { row: "front", index: 0 },
-      to: { row: "mid", index: 0 }
-    }, SIDE.PLAYER);
+    const result = wm.moveQueuedUnit(
+      {
+        from: { row: "front" as DraftRow, index: 0 },
+        to: { row: "mid" as DraftRow, index: 0 }
+      },
+      SIDE.PLAYER
+    );
     expect(result).toBe(true);
     expect(wm.playerDraft.front[0]).toBe("archer");
     expect(wm.playerDraft.mid[0]).toBe("guard");

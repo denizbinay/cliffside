@@ -1,12 +1,94 @@
-import { UNIT_ANIMATION_PROFILES } from "../data/unitAnimationProfiles.js";
-import { SIDE, UNIT_SIZE, COMBAT_CONFIG } from "../config/GameConfig.js";
+import { UNIT_ANIMATION_PROFILES } from "../data/unitAnimationProfiles";
+import { SIDE, UNIT_SIZE, COMBAT_CONFIG } from "../config/GameConfig";
+import type {
+  Side,
+  UnitTypeConfig,
+  UnitTypesMap,
+  StanceModifiers,
+  UnitAnimationProfile,
+  AnimationAction
+} from "../types";
+import type Castle from "./Castle";
+
+interface UnitStatus {
+  stun: number;
+  slow: number;
+  slowPower: number;
+  buff: number;
+  buffPower: number;
+}
+
+interface StatusEffect {
+  type: string;
+  duration?: number;
+  power?: number;
+  strength?: number;
+}
+
+interface ResolvedAnim {
+  action: string;
+  key: string;
+  lock: boolean;
+}
+
+interface StatusDotsContainer extends Phaser.GameObjects.Container {
+  status: {
+    stun: Phaser.GameObjects.Arc;
+    slow: Phaser.GameObjects.Arc;
+    buff: Phaser.GameObjects.Arc;
+  };
+}
+
+interface ShapeResult {
+  main: Phaser.GameObjects.Shape;
+  extras: Phaser.GameObjects.Shape[];
+}
 
 export default class Unit {
-  constructor(scene, config, side, x, y, modifiers = {}) {
+  scene: Phaser.Scene;
+  config: UnitTypeConfig;
+  side: Side;
+  role: string;
+  maxHp: number;
+  hp: number;
+  dmg: number;
+  range: number;
+  baseSpeed: number;
+  attackRate: number;
+  attackCooldown: number;
+  healAmount: number;
+  status: UnitStatus;
+  size: number;
+  body: Phaser.GameObjects.Container;
+  baseColor: number;
+  animatedProfile: UnitAnimationProfile | null;
+  currentUnitAnim: string;
+  unitAnimLocked: boolean;
+  actionAnimLockedUntil: number;
+  actionAnimLockedKey: string;
+  deathStarted: boolean;
+  deathAnimDone: boolean;
+  deathCleanupAt: number;
+  mainShape: Phaser.GameObjects.Shape | Phaser.GameObjects.Sprite;
+  statusDots: StatusDotsContainer;
+  healthBarOffsetY: number;
+  healthBar: Phaser.GameObjects.Rectangle;
+  healthFill: Phaser.GameObjects.Rectangle;
+  presenceMult: number;
+
+  constructor(
+    scene: Phaser.Scene,
+    config: UnitTypeConfig,
+    side: Side,
+    x: number,
+    y: number,
+    modifiers: Partial<StanceModifiers> = {}
+  ) {
     this.scene = scene;
     this.config = config;
     this.side = side;
     this.role = config.role;
+    this.presenceMult = 1;
 
     const hpMult = modifiers.hpMult || 1;
     const dmgMult = modifiers.dmgMult || 1;
@@ -66,7 +148,7 @@ export default class Unit {
     this.body.add(this.statusDots);
 
     this.healthBarOffsetY = Number.isFinite(this.animatedProfile?.healthBarOffsetY)
-      ? this.animatedProfile.healthBarOffsetY
+      ? this.animatedProfile!.healthBarOffsetY!
       : -30;
     this.healthBar = scene.add.rectangle(x, y + this.healthBarOffsetY, this.size, 5, 0x2d2f38);
     this.healthFill = scene.add.rectangle(x, y + this.healthBarOffsetY, this.size, 5, 0x76c27a);
@@ -74,11 +156,11 @@ export default class Unit {
     this.healthFill.setDepth(4);
   }
 
-  isAlive() {
+  isAlive(): boolean {
     return this.hp > 0;
   }
 
-  update(delta, enemies, allies, enemyCastle) {
+  update(delta: number, enemies: (Unit | import("./Turret").default)[], allies: Unit[], enemyCastle: Castle): void {
     if (!this.isAlive()) return;
 
     this.attackCooldown = Math.max(0, this.attackCooldown - delta);
@@ -109,7 +191,7 @@ export default class Unit {
           if (this.attackCooldown === 0) {
             target.takeDamage(this.dmg * buffMult);
             if (this.config.statusOnHit) {
-              target.applyStatus(this.config.statusOnHit, this.side);
+              (target as Unit).applyStatus(this.config.statusOnHit, this.side);
             }
             this.attackCooldown = this.attackRate;
             this.flash(0xffffff);
@@ -133,7 +215,7 @@ export default class Unit {
     this.syncBars();
   }
 
-  move(speed, delta, enemyCastleX) {
+  move(speed: number, delta: number, enemyCastleX: number): void {
     const dir = this.side === SIDE.PLAYER ? 1 : -1;
     this.body.x += dir * speed * delta;
 
@@ -143,8 +225,8 @@ export default class Unit {
     }
   }
 
-  findTarget(enemies) {
-    let closest = null;
+  findTarget(enemies: (Unit | import("./Turret").default)[]): (Unit | import("./Turret").default) | null {
+    let closest: (Unit | import("./Turret").default) | null = null;
     let minDist = Infinity;
     for (const enemy of enemies) {
       if (!enemy.isAlive()) continue;
@@ -157,8 +239,8 @@ export default class Unit {
     return closest;
   }
 
-  findHealTarget(allies) {
-    let best = null;
+  findHealTarget(allies: Unit[]): Unit | null {
+    let best: Unit | null = null;
     let missing = 0;
     for (const ally of allies) {
       if (!ally.isAlive()) continue;
@@ -172,12 +254,12 @@ export default class Unit {
     return best;
   }
 
-  inCastleRange(castleX) {
+  inCastleRange(castleX: number): boolean {
     const dist = Math.abs(castleX - this.body.x);
     return dist <= COMBAT_CONFIG.castleAttackRange;
   }
 
-  takeDamage(amount) {
+  takeDamage(amount: number): void {
     if (!this.isAlive()) return;
 
     this.hp = Math.max(0, this.hp - amount);
@@ -206,73 +288,73 @@ export default class Unit {
     const frameRate = deathAnim.frameRate || 10;
     const durationMs = deathAnim.duration || Math.round((frameCount / frameRate) * 1000);
     this.deathCleanupAt = this.scene.time.now + Math.max(120, durationMs + 30);
-    this.mainShape.once(`animationcomplete-${resolved.key}`, () => {
+    (this.mainShape as Phaser.GameObjects.Sprite).once(`animationcomplete-${resolved!.key}`, () => {
       this.deathAnimDone = true;
     });
   }
 
-  heal(amount) {
+  heal(amount: number): void {
     this.hp = Math.min(this.maxHp, this.hp + amount);
     this.flash(0xc9f5c7);
   }
 
-  applyStatus(status, attackerSide) {
+  applyStatus(status: StatusEffect, attackerSide: Side): void {
     if (status.type === "stun") {
-      this.status.stun = Math.max(this.status.stun, status.duration);
+      this.status.stun = Math.max(this.status.stun, status.duration || 0);
       this.flash(0xb5c7ff);
     }
     if (status.type === "slow") {
-      this.status.slow = Math.max(this.status.slow, status.duration);
-      this.status.slowPower = status.power;
+      this.status.slow = Math.max(this.status.slow, status.duration || 0);
+      this.status.slowPower = status.power || 1;
       this.flash(0x9fd6ff);
     }
     if (status.type === "pushback") {
       const dir = attackerSide === SIDE.PLAYER ? 1 : -1;
-      this.body.x += dir * status.strength;
+      this.body.x += dir * (status.strength || 0);
       this.status.stun = Math.max(this.status.stun, 0.3);
       this.flash(0xffe6a8);
     }
     if (status.type === "buff") {
-      this.status.buff = Math.max(this.status.buff, status.duration);
-      this.status.buffPower = status.power;
+      this.status.buff = Math.max(this.status.buff, status.duration || 0);
+      this.status.buffPower = status.power || 1;
       this.flash(0xf1d08f);
     }
   }
 
-  flash(color) {
-    if (this.mainShape?.setFillStyle) {
-      this.mainShape.setFillStyle(color);
-    } else if (this.mainShape?.setTintFill) {
-      this.mainShape.setTintFill(color);
+  flash(color: number): void {
+    if ((this.mainShape as Phaser.GameObjects.Shape).setFillStyle) {
+      (this.mainShape as Phaser.GameObjects.Shape).setFillStyle(color);
+    } else if ((this.mainShape as Phaser.GameObjects.Sprite).setTintFill) {
+      (this.mainShape as Phaser.GameObjects.Sprite).setTintFill(color);
     }
     this.scene.time.delayedCall(COMBAT_CONFIG.flashDuration, () => {
       if (!this.isAlive()) return;
-      if (this.mainShape?.setFillStyle) {
-        this.mainShape.setFillStyle(this.baseColor);
-      } else if (this.mainShape?.clearTint) {
-        this.mainShape.clearTint();
+      if ((this.mainShape as Phaser.GameObjects.Shape).setFillStyle) {
+        (this.mainShape as Phaser.GameObjects.Shape).setFillStyle(this.baseColor);
+      } else if ((this.mainShape as Phaser.GameObjects.Sprite).clearTint) {
+        (this.mainShape as Phaser.GameObjects.Sprite).clearTint();
       }
     });
   }
 
-  resolveAnimatedProfile(unitId) {
+  resolveAnimatedProfile(unitId: string): UnitAnimationProfile | null {
     const profile = UNIT_ANIMATION_PROFILES[unitId];
     if (!profile?.textureKey) return null;
     if (!this.scene.textures.exists(profile.textureKey)) return null;
     return profile;
   }
 
-  resolveUnitAnimAction(action) {
+  resolveUnitAnimAction(action: string): ResolvedAnim | null {
     if (!this.animatedProfile?.actions) return null;
 
     const fallback = this.animatedProfile.fallback || {};
     const candidates = [action, ...(fallback[action] || []), "idle"];
-    const visited = new Set();
+    const visited = new Set<string>();
 
     for (const candidate of candidates) {
       if (!candidate || visited.has(candidate)) continue;
       visited.add(candidate);
-      const animDef = this.animatedProfile.actions[candidate];
+      const animDef: AnimationAction | undefined = this.animatedProfile.actions[candidate];
       if (!animDef?.key) continue;
       if (this.scene.anims.exists(animDef.key)) {
         return { action: candidate, key: animDef.key, lock: animDef.lock === true };
@@ -282,8 +364,8 @@ export default class Unit {
     return null;
   }
 
-  playUnitAnim(action, force = false) {
-    if (!this.animatedProfile || !this.mainShape?.anims) return null;
+  playUnitAnim(action: string, force = false): ResolvedAnim | null {
+    if (!this.animatedProfile || !(this.mainShape as Phaser.GameObjects.Sprite).anims) return null;
     if (this.unitAnimLocked && !force && action !== "death") return null;
     if (!force && action !== "death" && this.scene.time.now < this.actionAnimLockedUntil) return null;
 
@@ -295,12 +377,12 @@ export default class Unit {
     if (resolved.lock) this.unitAnimLocked = true;
 
     this.currentUnitAnim = resolved.key;
-    this.mainShape.play(resolved.key, !force);
+    (this.mainShape as Phaser.GameObjects.Sprite).play(resolved.key, !force);
     this.lockTransientActionAnim(resolved);
     return resolved;
   }
 
-  lockTransientActionAnim(resolved) {
+  lockTransientActionAnim(resolved: ResolvedAnim | null): void {
     if (!resolved?.key) return;
     if (resolved.action !== "attack" && resolved.action !== "hit") return;
 
@@ -314,7 +396,7 @@ export default class Unit {
     this.actionAnimLockedKey = resolved.key;
     this.actionAnimLockedUntil = this.scene.time.now + Math.max(minimumMs, durationMs);
 
-    this.mainShape.once(`animationcomplete-${resolved.key}`, () => {
+    (this.mainShape as Phaser.GameObjects.Sprite).once(`animationcomplete-${resolved.key}`, () => {
       if (this.actionAnimLockedKey === resolved.key) {
         this.actionAnimLockedUntil = 0;
         this.actionAnimLockedKey = "";
@@ -322,14 +404,14 @@ export default class Unit {
     });
   }
 
-  isReadyForCleanup() {
+  isReadyForCleanup(): boolean {
     if (this.isAlive()) return false;
     if (!this.deathStarted) return true;
     if (this.deathAnimDone) return true;
     return this.scene.time.now >= this.deathCleanupAt;
   }
 
-  syncBars() {
+  syncBars(): void {
     this.healthBar.x = this.body.x;
     this.healthFill.x = this.body.x;
     this.healthBar.y = this.body.y + this.healthBarOffsetY;
@@ -345,13 +427,13 @@ export default class Unit {
     this.healthFill.setVisible(ratio > 0.02);
   }
 
-  destroy() {
+  destroy(): void {
     this.body.destroy();
     this.healthBar.destroy();
     this.healthFill.destroy();
   }
 
-  buildShape(id, color) {
+  buildShape(id: string, color: number): ShapeResult {
     const s = this.size;
     if (id === "guard") {
       const body = this.scene.add.rectangle(0, 0, s, s, color).setStrokeStyle(2, 0x1c1f27, 1);
@@ -369,15 +451,17 @@ export default class Unit {
       return { main: body, extras: [halo] };
     }
     if (id === "charger") {
-      const body = this.scene.add.triangle(0, 0, -s * 0.6, s * 0.5, s * 0.6, s * 0.5, 0, -s * 0.6, color).setStrokeStyle(2, 0x1c1f27, 1);
+      const body = this.scene.add
+        .triangle(0, 0, -s * 0.6, s * 0.5, s * 0.6, s * 0.5, 0, -s * 0.6, color)
+        .setStrokeStyle(2, 0x1c1f27, 1);
       const horn = this.scene.add.rectangle(0, -s * 0.1, s * 0.6, s * 0.12, 0xf0d39a);
       return { main: body, extras: [horn] };
     }
     return { main: this.scene.add.rectangle(0, 0, s, s, color), extras: [] };
   }
 
-  buildStatusDots() {
-    const group = this.scene.add.container(0, 0);
+  buildStatusDots(): StatusDotsContainer {
+    const group = this.scene.add.container(0, 0) as StatusDotsContainer;
     const stun = this.scene.add.circle(-12, 0, 4, 0x8cb7ff, 1);
     const slow = this.scene.add.circle(0, 0, 4, 0x9bd6ff, 1);
     const buff = this.scene.add.circle(12, 0, 4, 0xf1d08f, 1);
@@ -388,7 +472,7 @@ export default class Unit {
     return group;
   }
 
-  updateStatusDots() {
+  updateStatusDots(): void {
     const any = this.status.stun > 0 || this.status.slow > 0 || this.status.buff > 0;
     this.statusDots.setVisible(any);
     if (!any) return;
@@ -401,13 +485,13 @@ export default class Unit {
    * Build ghost shapes for the wave formation preview.
    * Shared static method to avoid duplicating shape definitions.
    */
-  static buildGhostShapes(scene, typeId, unitTypes) {
+  static buildGhostShapes(scene: Phaser.Scene, typeId: string, unitTypes: UnitTypesMap): Phaser.GameObjects.Shape[] {
     const config = unitTypes[typeId];
     if (!config) return [];
     const role = config.role;
     const size = UNIT_SIZE[role] || UNIT_SIZE.default;
     const color = config.color;
-    const shapes = [];
+    const shapes: Phaser.GameObjects.Shape[] = [];
 
     if (typeId === "guard") {
       const body = scene.add.rectangle(0, 0, size, size, color).setStrokeStyle(2, 0x1c1f27, 1);

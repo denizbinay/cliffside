@@ -1,9 +1,51 @@
-import { UNIT_TYPES } from "../data/units.js";
-import { STANCES } from "../data/stances.js";
-import { SIDE, WAVE_CONFIG, PHASE_LABELS } from "../config/GameConfig.js";
+import { UNIT_TYPES } from "../data/units";
+import { STANCES } from "../data/stances";
+import { SIDE, WAVE_CONFIG, PHASE_LABELS } from "../config/GameConfig";
+import type { Side, WaveDraft, DraftRow, Stance, StanceModifiers, StanceId } from "../types";
+import type EconomySystem from "./EconomySystem";
+import type ShopManager from "./ShopManager";
+
+interface QueuePayload {
+  id: string;
+  fromShop?: boolean;
+  slot?: DraftRow | null;
+  index?: number | null;
+}
+
+interface MovePayload {
+  from: { row: DraftRow; index: number };
+  to: { row: DraftRow; index: number };
+}
+
+interface SpawnOptions {
+  payCost: boolean;
+  offset: number;
+  presenceMult: number;
+  modifiers: Partial<StanceModifiers>;
+}
+
+interface WaveScene {
+  isGameOver: boolean;
+  matchTime: number;
+  time: { delayedCall: (delay: number, callback: () => void) => void };
+  events: { emit: (event: string, ...args: unknown[]) => void };
+}
 
 export default class WaveManager {
-  constructor(scene) {
+  scene: WaveScene;
+  waveSupply: number;
+  waveSize: number;
+  waveSlots: { front: number; mid: number; rear: number };
+  waveStagger: number;
+  waveSchedule: readonly { time: number; interval: number }[];
+  waveCountdown: number;
+  waveLocked: boolean;
+  waveNumber: number;
+  playerDraft: WaveDraft;
+  aiDraft: WaveDraft;
+  waveStance: Record<Side, StanceId>;
+
+  constructor(scene: WaveScene) {
     this.scene = scene;
     this.waveSupply = WAVE_CONFIG.supply;
     this.waveSize = WAVE_CONFIG.supply;
@@ -17,10 +59,10 @@ export default class WaveManager {
     this.playerDraft = this.createDraft();
     this.aiDraft = this.createDraft();
 
-    this.waveStance = { [SIDE.PLAYER]: "normal", [SIDE.AI]: "normal" };
+    this.waveStance = { [SIDE.PLAYER]: "normal", [SIDE.AI]: "normal" } as Record<Side, StanceId>;
   }
 
-  createDraft() {
+  createDraft(): WaveDraft {
     return {
       front: Array(this.waveSlots.front).fill(null),
       mid: Array(this.waveSlots.mid).fill(null),
@@ -28,7 +70,7 @@ export default class WaveManager {
     };
   }
 
-  getWaveInterval(elapsed) {
+  getWaveInterval(elapsed: number): number {
     let interval = this.waveSchedule[0].interval;
     for (const stage of this.waveSchedule) {
       if (elapsed >= stage.time) interval = stage.interval;
@@ -36,7 +78,7 @@ export default class WaveManager {
     return interval;
   }
 
-  getStageIndex(elapsed) {
+  getStageIndex(elapsed: number): number {
     let stageIndex = 0;
     for (let i = 0; i < this.waveSchedule.length; i += 1) {
       if (elapsed >= this.waveSchedule[i].time) stageIndex = i;
@@ -44,46 +86,47 @@ export default class WaveManager {
     return stageIndex;
   }
 
-  getPhaseLabel(elapsed) {
+  getPhaseLabel(elapsed: number): string {
     const stageIndex = this.getStageIndex(elapsed);
     return PHASE_LABELS[stageIndex] || `Phase ${stageIndex + 1}`;
   }
 
-  getUnlockedColumns(stageIndex) {
+  getUnlockedColumns(stageIndex: number): number {
     const maxColumns = Math.max(1, this.waveSlots?.front || 4);
     return Math.max(0, Math.min(maxColumns, WAVE_CONFIG.baseUnlockedColumns + stageIndex));
   }
 
-  selectStance(payload, side) {
+  selectStance(payload: string | { id: string }, side: Side): boolean {
     if (this.scene.isGameOver) return false;
     if (this.waveLocked) return false;
     const id = typeof payload === "string" ? payload : payload.id;
-    if (!STANCES[id]) return false;
-    this.waveStance[side] = id;
+    if (!STANCES[id as StanceId]) return false;
+    this.waveStance[side] = id as StanceId;
     return true;
   }
 
-  getStance(side) {
+  getStance(side: Side): Stance {
     const id = this.waveStance[side] || "normal";
     return STANCES[id] || STANCES.normal;
   }
 
-  getDraft(side) {
+  getDraft(side: Side): WaveDraft {
     return side === SIDE.PLAYER ? this.playerDraft : this.aiDraft;
   }
 
-  getDraftSlotCount(draft) {
+  getDraftSlotCount(draft: WaveDraft): number {
     return [...draft.front, ...draft.mid, ...draft.rear].filter(Boolean).length;
   }
 
-  getDraftSlotList(draft, slot) {
+  getDraftSlotList(draft: WaveDraft, slot: string): (string | null)[] | null {
     if (slot === "front") return draft.front;
     if (slot === "rear") return draft.rear;
+    if (slot === "mid") return draft.mid;
     return draft.mid;
   }
 
-  getFirstAvailableSlot(draft, unlockedColumns) {
-    const rows = ["front", "mid", "rear"];
+  getFirstAvailableSlot(draft: WaveDraft, unlockedColumns: number): { slot: DraftRow; index: number } | null {
+    const rows: DraftRow[] = ["front", "mid", "rear"];
     const maxColumns = Math.max(0, unlockedColumns || 0);
     for (const row of rows) {
       const list = this.getDraftSlotList(draft, row);
@@ -96,14 +139,20 @@ export default class WaveManager {
     return null;
   }
 
-  queueUnit(payload, side, economy, shop, stageIndex) {
+  queueUnit(
+    payload: string | QueuePayload,
+    side: Side,
+    economy: EconomySystem,
+    shop: ShopManager,
+    stageIndex: number
+  ): boolean {
     if (this.scene.isGameOver) return false;
     if (this.waveLocked) return false;
 
     const type = typeof payload === "string" ? payload : payload.id;
     const fromShop = typeof payload === "object" && payload.fromShop === true;
-    let slot = typeof payload === "string" ? null : payload.slot || null;
-    const index = typeof payload === "string" ? null : payload.index;
+    let slot: DraftRow | null | undefined = typeof payload === "string" ? null : (payload as QueuePayload).slot || null;
+    const index = typeof payload === "string" ? null : (payload as QueuePayload).index;
 
     const unitConfig = UNIT_TYPES[type];
     if (!unitConfig) return false;
@@ -119,12 +168,12 @@ export default class WaveManager {
       if (!target) return false;
       slot = target.slot;
     }
-    const slotList = this.getDraftSlotList(draft, slot);
+    const slotList = this.getDraftSlotList(draft, slot!);
     if (!slotList) return false;
     const unlockedInRow = Math.min(unlockedColumns, slotList.length);
     const filledCount = this.getDraftSlotCount(draft);
 
-    let targetIndex;
+    let targetIndex: number;
     if (filledCount >= this.waveSupply) {
       return false;
     } else if (typeof index === "number") {
@@ -157,7 +206,10 @@ export default class WaveManager {
     return true;
   }
 
-  removeQueuedUnit(payload, side) {
+  removeQueuedUnit(
+    payload: string | { id: string; slot?: DraftRow | null; index?: number | null },
+    side: Side
+  ): boolean {
     if (this.scene.isGameOver) return false;
     if (this.waveLocked) return false;
 
@@ -167,14 +219,14 @@ export default class WaveManager {
     if (!UNIT_TYPES[type]) return false;
     const draft = this.getDraft(side);
 
-    const removeFrom = (list) => {
+    const removeFrom = (list: (string | null)[]): boolean => {
       const slotIndex = list.lastIndexOf(type);
       if (slotIndex === -1) return false;
       list[slotIndex] = null;
       return true;
     };
 
-    let removed;
+    let removed: boolean;
     if (typeof index === "number" && slot) {
       const list = this.getDraftSlotList(draft, slot);
       if (!list || index < 0 || index >= list.length) return false;
@@ -190,7 +242,7 @@ export default class WaveManager {
     return removed;
   }
 
-  moveQueuedUnit(payload, side) {
+  moveQueuedUnit(payload: MovePayload | null, side: Side): boolean {
     if (this.scene.isGameOver) return false;
     if (this.waveLocked) return false;
     if (!payload?.from || !payload?.to) return false;
@@ -220,21 +272,21 @@ export default class WaveManager {
     return true;
   }
 
-  sendWave(side, spawnCallback) {
+  sendWave(side: Side, spawnCallback: (type: string, side: Side, opts: SpawnOptions) => void): void {
     if (this.scene.isGameOver) return;
     const draft = this.getDraft(side);
-    const waveUnits = [...draft.front, ...draft.mid, ...draft.rear].filter(Boolean);
+    const waveUnits = [...draft.front, ...draft.mid, ...draft.rear].filter(Boolean) as string[];
     if (waveUnits.length === 0) return;
 
     const count = Math.min(waveUnits.length, this.waveSupply);
     const ordered = waveUnits.slice(0, count);
     const spread = 12;
-    const roleCounts = ordered.reduce((acc, id) => {
+    const roleCounts = ordered.reduce<Record<string, number>>((acc, id) => {
       const role = UNIT_TYPES[id]?.role || "unknown";
       acc[role] = (acc[role] || 0) + 1;
       return acc;
     }, {});
-    const roleMult = {};
+    const roleMult: Record<string, number> = {};
     Object.keys(roleCounts).forEach((role) => {
       const extra = Math.max(0, roleCounts[role] - WAVE_CONFIG.roleDiminishingThreshold);
       roleMult[role] = Math.max(WAVE_CONFIG.roleDiminishingFloor, 1 - extra * WAVE_CONFIG.roleDiminishingStep);

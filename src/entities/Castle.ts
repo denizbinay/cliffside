@@ -1,8 +1,41 @@
 import Phaser from "phaser";
-import { SIDE, CASTLE_CONFIG } from "../config/GameConfig.js";
+import { SIDE, CASTLE_CONFIG } from "../config/GameConfig";
+import type { Side, LayoutProfile } from "../types";
+
+interface CastleVariantInfo {
+  useTwinMirror: boolean;
+  baseKey: string;
+  towerKey: string;
+  label: string;
+}
 
 export default class Castle {
-  constructor(scene, x, y, side, color, layoutProfile, getCastleVariant) {
+  scene: Phaser.Scene;
+  side: Side;
+  x: number;
+  y: number;
+  maxHp: number;
+  hp: number;
+  color: number;
+  base: Phaser.GameObjects.Image | Phaser.GameObjects.Rectangle;
+  hpBarFrame: Phaser.GameObjects.Rectangle;
+  hpBarBack: Phaser.GameObjects.Rectangle;
+  hpBarFill: Phaser.GameObjects.Rectangle;
+  baseTeamTint: number;
+  baseIsSprite: boolean;
+  hpBarWidth: number;
+  tower: Phaser.GameObjects.Image | null;
+  banner: Phaser.GameObjects.Sprite | null;
+
+  constructor(
+    scene: Phaser.Scene,
+    x: number,
+    y: number,
+    side: Side,
+    color: number,
+    layoutProfile: LayoutProfile,
+    getCastleVariant: () => CastleVariantInfo
+  ) {
     this.scene = scene;
     this.side = side;
     this.x = x;
@@ -15,8 +48,8 @@ export default class Castle {
     const castleKey = castleVariant.useTwinMirror
       ? castleVariant.baseKey
       : side === SIDE.PLAYER
-      ? "castle_base_player"
-      : "castle_base_ai";
+        ? "castle_base_player"
+        : "castle_base_ai";
     const hasCastleBase = scene.textures.exists(castleKey);
 
     const castleBaseCenterYOffset = layoutProfile.castle.baseCenterYOffset;
@@ -32,18 +65,31 @@ export default class Castle {
         .image(x, y + castleBaseCenterYOffset, castleKey)
         .setDisplaySize(castleBaseWidth, castleBaseHeight)
         .setDepth(6);
-      this.base.setFlipX(side === SIDE.PLAYER);
+      (this.base as Phaser.GameObjects.Image).setFlipX(side === SIDE.PLAYER);
     } else {
       this.base = scene.add.rectangle(x, y, 92, 120, color).setStrokeStyle(3, 0x20242f, 1).setDepth(6);
-      scene.add.rectangle(x, y + 22, 36, 48, 0x2a211e).setStrokeStyle(2, 0x161414, 1).setDepth(7);
-      scene.add.triangle(x, y - 90, -36, 20, 36, 20, 0, -20, 0x2a2f3a).setStrokeStyle(2, 0x1b1e27, 1).setDepth(7);
+      scene.add
+        .rectangle(x, y + 22, 36, 48, 0x2a211e)
+        .setStrokeStyle(2, 0x161414, 1)
+        .setDepth(7);
+      scene.add
+        .triangle(x, y - 90, -36, 20, 36, 20, 0, -20, 0x2a2f3a)
+        .setStrokeStyle(2, 0x1b1e27, 1)
+        .setDepth(7);
     }
 
     const hpBarX = x + (side === SIDE.PLAYER ? castleHpOffsetX : -castleHpOffsetX);
     const hpBarY = y + castleHpOffsetY;
     const hpFramePadding = 2;
     this.hpBarFrame = scene.add
-      .rectangle(hpBarX, hpBarY, castleHpBarWidth + hpFramePadding * 2, castleHpBarHeight + hpFramePadding * 2, 0x10151f, 0.92)
+      .rectangle(
+        hpBarX,
+        hpBarY,
+        castleHpBarWidth + hpFramePadding * 2,
+        castleHpBarHeight + hpFramePadding * 2,
+        0x10151f,
+        0.92
+      )
       .setStrokeStyle(1, 0xe4d6b8, 0.9)
       .setDepth(9);
     this.hpBarBack = scene.add.rectangle(hpBarX, hpBarY, castleHpBarWidth, castleHpBarHeight, 0x252d3a, 1).setDepth(10);
@@ -56,25 +102,29 @@ export default class Castle {
     this.baseIsSprite = hasCastleBase;
     this.hpBarWidth = castleHpBarWidth;
 
-    if (hasCastleBase) this.base.setTint(this.baseTeamTint);
+    if (hasCastleBase) (this.base as Phaser.GameObjects.Image).setTint(this.baseTeamTint);
 
     this.tower = null;
     this.banner = null;
   }
 
-  takeDamage(amount) {
+  takeDamage(amount: number): void {
     this.hp = Math.max(0, this.hp - amount);
     if (this.baseIsSprite) {
-      this.base.setTintFill(CASTLE_CONFIG.hitFlashColor);
-      this.scene.time.delayedCall(CASTLE_CONFIG.hitFlashDuration, () => this.base.setTint(this.baseTeamTint));
+      (this.base as Phaser.GameObjects.Image).setTintFill(CASTLE_CONFIG.hitFlashColor);
+      this.scene.time.delayedCall(CASTLE_CONFIG.hitFlashDuration, () =>
+        (this.base as Phaser.GameObjects.Image).setTint(this.baseTeamTint)
+      );
     } else {
-      this.base.setFillStyle(CASTLE_CONFIG.hitFlashColor);
-      this.scene.time.delayedCall(CASTLE_CONFIG.hitFlashDuration, () => this.base.setFillStyle(this.color));
+      (this.base as Phaser.GameObjects.Rectangle).setFillStyle(CASTLE_CONFIG.hitFlashColor);
+      this.scene.time.delayedCall(CASTLE_CONFIG.hitFlashDuration, () =>
+        (this.base as Phaser.GameObjects.Rectangle).setFillStyle(this.color)
+      );
     }
     this.scene.cameras.main.shake(CASTLE_CONFIG.shakeDuration, CASTLE_CONFIG.shakeIntensity);
   }
 
-  updateHud() {
+  updateHud(): void {
     if (!this.hpBarFill || !this.hpBarWidth) return;
     const ratio = Phaser.Math.Clamp(this.hp / this.maxHp, 0, 1);
     this.hpBarFill.width = this.hpBarWidth * ratio;
@@ -83,7 +133,7 @@ export default class Castle {
     this.hpBarFill.setVisible(ratio > 0.01);
   }
 
-  destroy() {
+  destroy(): void {
     this.base?.destroy();
     this.tower?.destroy();
     this.banner?.destroy();

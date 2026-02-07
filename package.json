@@ -8,6 +8,7 @@
     "build:adept-atlas": "node scripts/build-adept-atlas-json.mjs",
     "build": "vite build",
     "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write src/",
@@ -23,6 +24,8 @@
     "eslint": "^10.0.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.8.1",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.54.0",
     "vite": "^5.4.3",
     "vitest": "^4.0.18"
   }

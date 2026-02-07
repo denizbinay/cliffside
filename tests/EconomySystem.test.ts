@@ -1,8 +1,15 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { ECONOMY_CONFIG, SIDE } from "../src/config/GameConfig.js";
-import EconomySystem from "../src/systems/EconomySystem.js";
+import { ECONOMY_CONFIG, SIDE } from "../src/config/GameConfig";
+import EconomySystem from "../src/systems/EconomySystem";
+import type { Side, ControlPoint } from "../src/types";
 
-function createMockScene() {
+// Mock scene interface that matches what EconomySystem expects
+interface MockScene {
+  controlPoints: { owner: Side | "neutral"; index: number }[];
+  events: { emit: (event: string, ...args: unknown[]) => void };
+}
+
+function createMockScene(): MockScene {
   return {
     controlPoints: [],
     events: {
@@ -12,12 +19,12 @@ function createMockScene() {
 }
 
 describe("EconomySystem", () => {
-  let economy;
-  let scene;
+  let economy: EconomySystem;
+  let scene: MockScene;
 
   beforeEach(() => {
     scene = createMockScene();
-    economy = new EconomySystem(scene);
+    economy = new EconomySystem(scene as unknown as any);
   });
 
   it("initializes with starting resources for both sides", () => {
@@ -95,9 +102,7 @@ describe("EconomySystem", () => {
 
   it("getIncomeDetails includes enemy point bonus for deep points", () => {
     // Player owns point index 3 (enemy territory for player)
-    scene.controlPoints = [
-      { owner: SIDE.PLAYER, index: 3 }
-    ];
+    scene.controlPoints = [{ owner: SIDE.PLAYER, index: 3 }];
     const details = economy.getIncomeDetails(SIDE.PLAYER);
     expect(details.enemyBonus).toBe(ECONOMY_CONFIG.enemyPointBonus);
   });

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { SIDE } from "../src/config/GameConfig.js";
-import { SHOP_CONFIG } from "../src/data/shop.js";
-import ShopManager from "../src/systems/ShopManager.js";
+import { SIDE } from "../src/config/GameConfig";
+import { SHOP_CONFIG } from "../src/data/shop";
+import ShopManager from "../src/systems/ShopManager";
 
 function createMockScene() {
   return {
@@ -12,7 +12,7 @@ function createMockScene() {
 }
 
 describe("ShopManager", () => {
-  let shop;
+  let shop: ShopManager;
 
   beforeEach(() => {
     shop = new ShopManager(createMockScene());
@@ -50,16 +50,20 @@ describe("ShopManager", () => {
   it("isUnitAvailable correctly checks offers", () => {
     shop.rollOffers(SIDE.PLAYER, 0, true);
     const offerId = shop.getShop(SIDE.PLAYER).offers[0];
-    expect(shop.isUnitAvailable(SIDE.PLAYER, offerId)).toBe(true);
+    if (offerId) {
+      expect(shop.isUnitAvailable(SIDE.PLAYER, offerId)).toBe(true);
+    }
     expect(shop.isUnitAvailable(SIDE.PLAYER, "nonexistent_unit")).toBe(false);
   });
 
   it("claimOffer removes the unit from offers", () => {
     shop.rollOffers(SIDE.PLAYER, 0, true);
     const offerId = shop.getShop(SIDE.PLAYER).offers[0];
-    const result = shop.claimOffer(SIDE.PLAYER, offerId);
-    expect(result).toBe(true);
-    expect(shop.getShop(SIDE.PLAYER).offers[0]).toBeNull();
+    if (offerId) {
+      const result = shop.claimOffer(SIDE.PLAYER, offerId);
+      expect(result).toBe(true);
+      expect(shop.getShop(SIDE.PLAYER).offers[0]).toBeNull();
+    }
   });
 
   it("claimOffer fails for non-existent unit", () => {

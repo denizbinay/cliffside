@@ -1,16 +1,17 @@
-import { UNIT_TYPES } from "../data/units.js";
-import { ABILITIES } from "../data/abilities.js";
-import { SHOP_CONFIG } from "../data/shop.js";
-import { STANCES } from "../data/stances.js";
+import { UNIT_TYPES } from "../data/units";
+import { ABILITIES } from "../data/abilities";
+import { SHOP_CONFIG } from "../data/shop";
+import { STANCES } from "../data/stances";
+import type { UiState, AbilityId, StanceId, UnitTypeConfig, Side } from "../types";
 
-const ROLE_TAGS = {
+const ROLE_TAGS: Record<string, string> = {
   frontline: "F",
   damage: "D",
   support: "S",
   disruptor: "X"
 };
 
-const ROLE_COLORS = {
+const ROLE_COLORS: Record<string, string> = {
   frontline: "#5f7685",
   damage: "#a67f5d",
   support: "#8fbf99",
@@ -19,12 +20,59 @@ const ROLE_COLORS = {
 
 const PHASE_LABELS = ["Early", "Mid", "Late", "Final"];
 
-function getUnitPortraitPath(unitId) {
+function getUnitPortraitPath(unitId: string): string {
   return `/assets/units/portrait-large-${unitId}.jpg`;
 }
 
+interface UiRefs {
+  resources: HTMLElement;
+  income: HTMLElement;
+  enemyResources: HTMLElement;
+  enemyIncome: HTMLElement;
+  waveLabel: HTMLElement;
+  wavePhase: HTMLElement;
+  waveCountdown: HTMLElement;
+  waveRing: HTMLElement;
+  controlPips: HTMLElement[];
+  reroll: HTMLButtonElement;
+  rerollCost: HTMLElement;
+  shopList: HTMLElement;
+  stanceButtons: HTMLElement;
+  waveGrid: HTMLElement;
+  abilityList: HTMLElement;
+  tooltip: HTMLElement;
+  tooltipText: HTMLElement;
+  waveWarning: HTMLElement;
+  waveWarningCount: HTMLElement;
+  gameover: HTMLElement;
+}
+
+interface DragSource {
+  row: string;
+  index: number;
+}
+
 export default class UIController {
-  constructor(game) {
+  game: Phaser.Game;
+  scene: Phaser.Scene | null;
+  state: UiState | null;
+  waveSlotsSignature: string;
+  dragSource: DragSource | null;
+  tooltipShowDelay: number;
+  tooltipHideDelay: number;
+  tooltipShowTimer: number | null;
+  tooltipHideTimer: number | null;
+  pendingTooltipTarget: HTMLElement | null;
+  root!: HTMLElement;
+  layer!: HTMLElement;
+  refs!: UiRefs;
+  shopCards!: HTMLButtonElement[];
+  abilityButtons!: Map<string, HTMLButtonElement>;
+  stanceButtons!: Map<string, HTMLButtonElement>;
+  waveSlotButtons!: HTMLButtonElement[];
+  bindTimer?: number;
+
+  constructor(game: Phaser.Game) {
     this.game = game;
     this.scene = null;
     this.state = null;
@@ -46,7 +94,7 @@ export default class UIController {
     }
   }
 
-  buildDOM() {
+  buildDOM(): void {
     const root = document.getElementById("ui-root") || document.createElement("div");
     root.id = "ui-root";
     root.className = "ui-root";
@@ -147,35 +195,35 @@ export default class UIController {
     `;
 
     this.root = root;
-    this.layer = root.querySelector(".ui-layer");
+    this.layer = root.querySelector(".ui-layer") as HTMLElement;
 
     this.refs = {
-      resources: root.querySelector("[data-ui='resources']"),
-      income: root.querySelector("[data-ui='income']"),
-      enemyResources: root.querySelector("[data-ui='enemy-resources']"),
-      enemyIncome: root.querySelector("[data-ui='enemy-income']"),
-      waveLabel: root.querySelector("[data-ui='wave-label']"),
-      wavePhase: root.querySelector("[data-ui='wave-phase']"),
-      waveCountdown: root.querySelector("[data-ui='wave-countdown']"),
-      waveRing: root.querySelector("[data-ui='wave-ring']"),
-      controlPips: Array.from(root.querySelectorAll("[data-ui='control-pips'] .pip")),
-      reroll: root.querySelector("[data-ui='reroll']"),
-      rerollCost: root.querySelector("[data-ui='reroll-cost']"),
-      shopList: root.querySelector("[data-ui='shop-list']"),
-      stanceButtons: root.querySelector("[data-ui='stance-buttons']"),
-      waveGrid: root.querySelector("[data-ui='wave-grid']"),
-      abilityList: root.querySelector("[data-ui='ability-list']"),
-      tooltip: root.querySelector("[data-ui='tooltip']"),
-      tooltipText: root.querySelector("[data-ui='tooltip-text']"),
-      waveWarning: root.querySelector("[data-ui='wave-warning']"),
-      waveWarningCount: root.querySelector("[data-ui='wave-warning-count']"),
-      gameover: root.querySelector("[data-ui='gameover']")
+      resources: root.querySelector("[data-ui='resources']") as HTMLElement,
+      income: root.querySelector("[data-ui='income']") as HTMLElement,
+      enemyResources: root.querySelector("[data-ui='enemy-resources']") as HTMLElement,
+      enemyIncome: root.querySelector("[data-ui='enemy-income']") as HTMLElement,
+      waveLabel: root.querySelector("[data-ui='wave-label']") as HTMLElement,
+      wavePhase: root.querySelector("[data-ui='wave-phase']") as HTMLElement,
+      waveCountdown: root.querySelector("[data-ui='wave-countdown']") as HTMLElement,
+      waveRing: root.querySelector("[data-ui='wave-ring']") as HTMLElement,
+      controlPips: Array.from(root.querySelectorAll("[data-ui='control-pips'] .pip")) as HTMLElement[],
+      reroll: root.querySelector("[data-ui='reroll']") as HTMLButtonElement,
+      rerollCost: root.querySelector("[data-ui='reroll-cost']") as HTMLElement,
+      shopList: root.querySelector("[data-ui='shop-list']") as HTMLElement,
+      stanceButtons: root.querySelector("[data-ui='stance-buttons']") as HTMLElement,
+      waveGrid: root.querySelector("[data-ui='wave-grid']") as HTMLElement,
+      abilityList: root.querySelector("[data-ui='ability-list']") as HTMLElement,
+      tooltip: root.querySelector("[data-ui='tooltip']") as HTMLElement,
+      tooltipText: root.querySelector("[data-ui='tooltip-text']") as HTMLElement,
+      waveWarning: root.querySelector("[data-ui='wave-warning']") as HTMLElement,
+      waveWarningCount: root.querySelector("[data-ui='wave-warning-count']") as HTMLElement,
+      gameover: root.querySelector("[data-ui='gameover']") as HTMLElement
     };
 
     this.refs.reroll.addEventListener("click", () => this.handleReroll());
 
-    const infoBtn = root.querySelector(".ui-info");
-    infoBtn.addEventListener("mouseenter", (event) => this.showTooltip(event.currentTarget));
+    const infoBtn = root.querySelector(".ui-info") as HTMLButtonElement;
+    infoBtn.addEventListener("mouseenter", (event) => this.showTooltip(event.currentTarget as HTMLElement));
     infoBtn.addEventListener("mouseleave", () => this.hideTooltip());
 
     this.buildShopCards();
@@ -183,7 +231,7 @@ export default class UIController {
     this.buildStanceButtons();
   }
 
-  bindScene() {
+  bindScene(): void {
     const tryBind = () => {
       const scene = this.game?.scene?.getScene("Game");
       if (scene && scene.sys && scene.sys.isActive()) {
@@ -195,33 +243,37 @@ export default class UIController {
 
     if (!tryBind()) {
       this.bindTimer = window.setInterval(() => {
-        if (tryBind()) window.clearInterval(this.bindTimer);
+        if (tryBind()) {
+          window.clearInterval(this.bindTimer);
+          this.bindTimer = undefined;
+        }
       }, 120);
     }
   }
 
-  attachScene(scene) {
+  attachScene(scene: Phaser.Scene): void {
     this.scene = scene;
-    scene.events.on("ui-state", (state) => this.render(state));
-    scene.events.on("game-over", (winner) => this.showGameOver(winner));
+    scene.events.on("ui-state", (state: UiState) => this.render(state));
+    scene.events.on("game-over", (winner: string) => this.showGameOver(winner));
     scene.events.on("shutdown", () => this.clearScene());
   }
 
-  clearScene() {
+  clearScene(): void {
     this.scene = null;
   }
 
-  updateLayout() {
+  updateLayout(): void {
     if (!this.game?.canvas || !this.root) return;
     const rect = this.game.canvas.getBoundingClientRect();
     this.root.style.left = `${rect.left}px`;
     this.root.style.top = `${rect.top}px`;
     this.root.style.width = `${rect.width}px`;
     this.root.style.height = `${rect.height}px`;
-    this.root.style.borderRadius = getComputedStyle(this.game.canvas).borderRadius || "14px";
+    const computedStyle = getComputedStyle(this.game.canvas);
+    this.root.style.borderRadius = computedStyle.borderRadius || "14px";
   }
 
-  buildShopCards() {
+  buildShopCards(): void {
     this.shopCards = [];
     this.refs.shopList.innerHTML = "";
     for (let i = 0; i < SHOP_CONFIG.offersPerWave; i += 1) {
@@ -252,7 +304,7 @@ export default class UIController {
       `;
 
       card.addEventListener("click", () => this.handleShopClick(card));
-      card.addEventListener("mouseenter", (event) => this.showTooltip(event.currentTarget));
+      card.addEventListener("mouseenter", (event) => this.showTooltip(event.currentTarget as HTMLElement));
       card.addEventListener("mouseleave", () => this.hideTooltip());
 
       slot.appendChild(card);
@@ -262,7 +314,7 @@ export default class UIController {
     }
   }
 
-  buildAbilityButtons() {
+  buildAbilityButtons(): void {
     this.abilityButtons = new Map();
     this.refs.abilityList.innerHTML = "";
     Object.values(ABILITIES).forEach((ability) => {
@@ -282,7 +334,7 @@ export default class UIController {
       `;
 
       btn.addEventListener("click", () => this.handleAbilityClick(ability.id));
-      btn.addEventListener("mouseenter", (event) => this.showTooltip(event.currentTarget));
+      btn.addEventListener("mouseenter", (event) => this.showTooltip(event.currentTarget as HTMLElement));
       btn.addEventListener("mouseleave", () => this.hideTooltip());
 
       this.refs.abilityList.appendChild(btn);
@@ -290,11 +342,11 @@ export default class UIController {
     });
   }
 
-  buildStanceButtons() {
+  buildStanceButtons(): void {
     this.stanceButtons = new Map();
     this.refs.stanceButtons.innerHTML = "";
-    const order = ["normal", "defensive", "aggressive"];
-    const labels = {
+    const order: StanceId[] = ["normal", "defensive", "aggressive"];
+    const labels: Record<StanceId, string> = {
       normal: "Normal",
       defensive: "Defensive",
       aggressive: "Aggressive"
@@ -312,7 +364,7 @@ export default class UIController {
         <div class="stance-name">${labels[id] || stance?.name || "Unknown"}</div>
       `;
       btn.addEventListener("click", () => this.handleStanceClick(id));
-      btn.addEventListener("mouseenter", (event) => this.showTooltip(event.currentTarget));
+      btn.addEventListener("mouseenter", (event) => this.showTooltip(event.currentTarget as HTMLElement));
       btn.addEventListener("mouseleave", () => this.hideTooltip());
 
       if (!stance) btn.disabled = true;
@@ -321,7 +373,7 @@ export default class UIController {
     });
   }
 
-  ensureWaveSlots(waveSlots) {
+  ensureWaveSlots(waveSlots: Record<string, number>): void {
     const signature = JSON.stringify(waveSlots || {});
     if (signature === this.waveSlotsSignature) return;
     this.waveSlotsSignature = signature;
@@ -341,7 +393,7 @@ export default class UIController {
         slotBtn.dataset.tooltipType = "unit";
         slotBtn.innerHTML = `<span class="wave-slot-icon">+</span>`;
         slotBtn.addEventListener("click", () => this.handleSlotClick(slotBtn));
-        slotBtn.addEventListener("mouseenter", (event) => this.showTooltip(event.currentTarget));
+        slotBtn.addEventListener("mouseenter", (event) => this.showTooltip(event.currentTarget as HTMLElement));
         slotBtn.addEventListener("mouseleave", () => this.hideTooltip());
         slotBtn.addEventListener("dragstart", (event) => this.handleDragStart(event, slotBtn));
         slotBtn.addEventListener("dragover", (event) => this.handleDragOver(event));
@@ -353,10 +405,10 @@ export default class UIController {
     });
   }
 
-  render(state) {
+  render(state: UiState): void {
     if (!state) return;
     this.state = state;
-    this.ensureWaveSlots(state.waveSlots);
+    this.ensureWaveSlots(state.waveSlots as unknown as Record<string, number>);
 
     this.refs.resources.textContent = `${state.playerResources.toFixed(1)}`;
     this.refs.income.textContent = `+${state.playerIncome.toFixed(2)} /s`;
@@ -377,7 +429,7 @@ export default class UIController {
     this.updateWaveWarning(state.wave.countdown, state.isGameOver);
   }
 
-  updateWaveWarning(countdown, isGameOver) {
+  updateWaveWarning(countdown: number, isGameOver: boolean): void {
     if (!this.refs.waveWarning || !this.refs.waveWarningCount) return;
     const remaining = Math.ceil(Math.max(0, countdown || 0));
     const show = !isGameOver && remaining > 0 && countdown <= 5;
@@ -386,8 +438,9 @@ export default class UIController {
     this.refs.waveWarningCount.textContent = `${remaining}`;
   }
 
-  updateWaveRing(countdown, interval, locked) {
-    const ring = this.refs.waveRing.querySelector(".wave-ring-progress");
+  updateWaveRing(countdown: number, interval: number, locked: boolean): void {
+    const ring = this.refs.waveRing.querySelector(".wave-ring-progress") as SVGElement;
+    if (!ring) return;
     const progress = Math.max(0, Math.min(1, 1 - countdown / Math.max(1, interval)));
     const radius = 14;
     const circumference = 2 * Math.PI * radius;
@@ -399,7 +452,7 @@ export default class UIController {
     this.refs.waveRing.classList.toggle("is-urgent", countdown <= 5);
   }
 
-  updateControlPips(controlPoints) {
+  updateControlPips(controlPoints: (Side | "neutral")[]): void {
     this.refs.controlPips.forEach((pip, index) => {
       const owner = controlPoints[index] || "neutral";
       pip.classList.remove("pip-player", "pip-ai", "pip-neutral");
@@ -407,24 +460,26 @@ export default class UIController {
     });
   }
 
-  updateShop(state) {
+  updateShop(state: UiState): void {
     const offers = state.shop.offers || [];
     this.shopCards.forEach((card, index) => {
       const id = offers[index] || null;
       const slot = card.parentElement;
       const placeholder = slot?.querySelector(".shop-slot-placeholder");
       const title = card.querySelector(".ui-card-title");
-      const roleTag = card.querySelector(".ui-card-class");
+      const roleTag = card.querySelector(".ui-card-class") as HTMLElement;
       const price = card.querySelector(".ui-card-price");
-      const image = card.querySelector(".ui-card-image");
+      const image = card.querySelector(".ui-card-image") as HTMLElement;
 
       if (id && UNIT_TYPES[id]) {
         const unit = UNIT_TYPES[id];
         if (placeholder) placeholder.classList.remove("is-visible");
-        title.textContent = unit.name;
-        roleTag.textContent = ROLE_TAGS[unit.role] || "?";
-        roleTag.style.background = ROLE_COLORS[unit.role] || "#3a4150";
-        price.textContent = `${unit.cost}`;
+        if (title) title.textContent = unit.name;
+        if (roleTag) {
+          roleTag.textContent = ROLE_TAGS[unit.role] || "?";
+          roleTag.style.background = ROLE_COLORS[unit.role] || "#3a4150";
+        }
+        if (price) price.textContent = `${unit.cost}`;
         if (image) {
           image.style.backgroundImage = `linear-gradient(rgba(16, 18, 24, 0.18), rgba(16, 18, 24, 0.55)), url("${getUnitPortraitPath(unit.id)}")`;
         }
@@ -435,10 +490,12 @@ export default class UIController {
         card.style.display = "";
       } else {
         if (placeholder) placeholder.classList.add("is-visible");
-        title.textContent = "No offer";
-        roleTag.textContent = "-";
-        roleTag.style.background = "#3a4150";
-        price.textContent = "--";
+        if (title) title.textContent = "No offer";
+        if (roleTag) {
+          roleTag.textContent = "-";
+          roleTag.style.background = "#3a4150";
+        }
+        if (price) price.textContent = "--";
         if (image) {
           image.style.backgroundImage = "";
         }
@@ -453,8 +510,9 @@ export default class UIController {
     this.refs.reroll.classList.toggle("is-disabled", !state.shop.canReroll);
   }
 
-  updateWaveBuilder(state) {
-    const draft = state.waveDraft || { front: [], mid: [], rear: [] };
+  updateWaveBuilder(state: UiState): void {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const draft = state.waveDraft || ({ front: [], mid: [], rear: [] } as any);
     const locked = state.wave.locked;
     const unlockedColumns = Number(state.wave?.unlockedColumns ?? 4);
 
@@ -465,12 +523,12 @@ export default class UIController {
     });
 
     this.waveSlotButtons.forEach((slotBtn) => {
-      const row = slotBtn.dataset.row;
+      const row = slotBtn.dataset.row as "front" | "mid" | "rear";
       const index = Number(slotBtn.dataset.index || 0);
       const list = draft[row] || [];
       const unitId = list[index];
       const columnLocked = index >= unlockedColumns;
-      const icon = slotBtn.querySelector(".wave-slot-icon");
+      const icon = slotBtn.querySelector(".wave-slot-icon") as HTMLElement;
 
       slotBtn.dataset.unitId = unitId || "";
       slotBtn.dataset.tooltipId = unitId || "";
@@ -486,32 +544,34 @@ export default class UIController {
         slotBtn.style.backgroundSize = "cover";
         slotBtn.style.backgroundPosition = "center";
         slotBtn.style.backgroundRepeat = "no-repeat";
-        icon.textContent = "";
+        if (icon) icon.textContent = "";
       } else {
         slotBtn.style.background = columnLocked ? "#151a23" : "#1c202a";
         slotBtn.style.backgroundImage = "";
-        icon.textContent = columnLocked ? "" : "+";
-        icon.style.color = "#6f7a8c";
+        if (icon) {
+          icon.textContent = columnLocked ? "" : "+";
+          icon.style.color = "#6f7a8c";
+        }
       }
     });
   }
 
-  updateAbilities(state) {
+  updateAbilities(state: UiState): void {
     Object.entries(state.abilityCooldowns || {}).forEach(([id, cd]) => {
       const btn = this.abilityButtons.get(id);
       if (!btn) return;
       const cooldown = btn.querySelector("[data-ui='cooldown']");
       const enabled = cd <= 0 && !state.isGameOver;
       btn.classList.toggle("is-disabled", !enabled);
-      cooldown.textContent = cd > 0 ? `${cd.toFixed(1)}s` : "Ready";
+      if (cooldown) cooldown.textContent = cd > 0 ? `${cd.toFixed(1)}s` : "Ready";
     });
   }
 
-  updateDisabledStates(state) {
+  updateDisabledStates(state: UiState): void {
     this.refs.reroll.classList.toggle("is-disabled", !state.shop.canReroll);
   }
 
-  handleShopClick(card) {
+  handleShopClick(card: HTMLButtonElement): void {
     if (!this.scene || card.classList.contains("is-disabled")) return;
     if (this.state?.isGameOver || this.state?.wave.locked) return;
     const unitId = card.dataset.unitId;
@@ -520,24 +580,24 @@ export default class UIController {
     this.scene.events.emit("queue-add", payload);
   }
 
-  handleReroll() {
+  handleReroll(): void {
     if (!this.scene || this.refs.reroll.classList.contains("is-disabled")) return;
     this.scene.events.emit("shop-reroll");
   }
 
-  handleAbilityClick(id) {
+  handleAbilityClick(id: string): void {
     if (!this.scene) return;
     const btn = this.abilityButtons.get(id);
     if (btn?.classList.contains("is-disabled")) return;
     this.scene.events.emit("ability-request", id);
   }
 
-  handleStanceClick(id) {
+  handleStanceClick(id: string): void {
     if (!this.scene || this.state?.wave.locked) return;
     this.scene.events.emit("stance-select", { id });
   }
 
-  handleSlotClick(slotBtn) {
+  handleSlotClick(slotBtn: HTMLButtonElement): void {
     if (!this.scene || this.state?.wave.locked) return;
     if (slotBtn.dataset.columnLocked === "1") return;
     const row = slotBtn.dataset.row;
@@ -548,7 +608,7 @@ export default class UIController {
     }
   }
 
-  handleDragStart(event, slotBtn) {
+  handleDragStart(event: DragEvent, slotBtn: HTMLButtonElement): void {
     if (!this.scene || this.state?.wave.locked) return;
     if (slotBtn.dataset.columnLocked === "1") {
       event.preventDefault();
@@ -560,26 +620,28 @@ export default class UIController {
       return;
     }
     this.dragSource = {
-      row: slotBtn.dataset.row,
+      row: slotBtn.dataset.row!,
       index: Number(slotBtn.dataset.index || 0)
     };
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", `${this.dragSource.row}:${this.dragSource.index}`);
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", `${this.dragSource.row}:${this.dragSource.index}`);
+    }
     slotBtn.classList.add("is-dragging");
   }
 
-  handleDragOver(event) {
+  handleDragOver(event: DragEvent): void {
     if (!this.dragSource || this.state?.wave.locked) return;
-    if (event.currentTarget?.dataset?.columnLocked === "1") return;
+    if ((event.currentTarget as HTMLElement)?.dataset?.columnLocked === "1") return;
     event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
   }
 
-  handleDrop(event, slotBtn) {
+  handleDrop(event: DragEvent, slotBtn: HTMLButtonElement): void {
     if (!this.scene || !this.dragSource || this.state?.wave.locked) return;
     if (slotBtn.dataset.columnLocked === "1") return;
     event.preventDefault();
-    const targetRow = slotBtn.dataset.row;
+    const targetRow = slotBtn.dataset.row!;
     const targetIndex = Number(slotBtn.dataset.index || 0);
     if (targetRow === this.dragSource.row && targetIndex === this.dragSource.index) return;
     this.scene.events.emit("queue-move", {
@@ -589,12 +651,12 @@ export default class UIController {
     this.dragSource = null;
   }
 
-  handleDragEnd(slotBtn) {
+  handleDragEnd(slotBtn: HTMLButtonElement): void {
     slotBtn.classList.remove("is-dragging");
     this.dragSource = null;
   }
 
-  showTooltip(target) {
+  showTooltip(target: HTMLElement): void {
     const type = target?.dataset?.tooltipType;
     if (!type) return;
     if (this.tooltipHideTimer) {
@@ -607,6 +669,7 @@ export default class UIController {
       this.tooltipShowTimer = null;
       const currentTarget = this.pendingTooltipTarget;
       this.pendingTooltipTarget = null;
+      if (!currentTarget) return;
       const currentType = currentTarget?.dataset?.tooltipType;
       if (!currentType) return;
       const id = currentTarget?.dataset?.tooltipId || null;
@@ -619,7 +682,7 @@ export default class UIController {
     }, this.tooltipShowDelay);
   }
 
-  positionTooltip(target) {
+  positionTooltip(target: HTMLElement): void {
     const rootRect = this.root.getBoundingClientRect();
     const rect = target.getBoundingClientRect();
     const tooltip = this.refs.tooltip;
@@ -641,7 +704,7 @@ export default class UIController {
     tooltip.style.top = `${y}px`;
   }
 
-  hideTooltip() {
+  hideTooltip(): void {
     if (this.tooltipShowTimer) {
       window.clearTimeout(this.tooltipShowTimer);
       this.tooltipShowTimer = null;
@@ -654,34 +717,39 @@ export default class UIController {
     }, this.tooltipHideDelay);
   }
 
-  getTooltipText(type, id) {
+  getTooltipText(type: string, id: string | null): string {
     if (type === "shop" || type === "unit") {
-      const unit = UNIT_TYPES[id];
+      const unit = UNIT_TYPES[id!];
       if (!unit) return "";
       return `${unit.name}\n${unit.summary}\n${unit.special}\nHP ${unit.hp} | DMG ${unit.dmg}\nRange ${unit.range} | Speed ${unit.speed}`;
     }
     if (type === "stance") {
-      const stance = STANCES[id];
+      const stance = STANCES[id as StanceId];
       if (!stance) return "";
       return `${stance.name}\n${stance.summary}`;
     }
     if (type === "ability") {
-      const ability = ABILITIES[id];
+      const ability = ABILITIES[id as AbilityId];
       if (!ability) return "";
-      const desc = ability.id === "healWave" ? "Heals all allies across the board." : "Pushes and stuns enemies on your platform.";
+      const desc =
+        ability.id === "healWave" ? "Heals all allies across the board." : "Pushes and stuns enemies on your platform.";
       return `${ability.name}\n${desc}\nCooldown ${ability.cooldown}s`;
     }
     if (type === "interest") {
-      if (!this.scene?.getIncomeDetails) return "";
-      const details = this.scene.getIncomeDetails("player");
-      const cap = this.scene.interestCap;
-      const rate = Math.round(this.scene.interestRate * 100);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const scene = this.scene as any;
+      if (!scene?.getIncomeDetails) return "";
+      const details = scene.getIncomeDetails("player");
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const cap = (this.scene as any).economy.interestCap || 12;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const rate = Math.round(((this.scene as any).economy.interestRate || 0.05) * 100);
       return `Income Breakdown\nBase +${details.base.toFixed(2)}/s\nPoints +${details.pointBonus.toFixed(2)}/s\nEnemy Points +${details.enemyBonus.toFixed(2)}/s\nInterest ${rate}% (cap ${cap})\nSavings +${details.interest.toFixed(2)}/s`;
     }
     return "";
   }
 
-  showGameOver(winner) {
+  showGameOver(winner: string): void {
     if (!this.refs.gameover) return;
     this.refs.gameover.textContent = `${winner} wins`;
     this.refs.gameover.classList.add("is-visible");
