@@ -52,8 +52,8 @@ export const UNIT_ANIMATION_ASSETS = {
         fps: 12,
         repeat: -1
       },
-      attack: {
-        sheetKey: "adept_attack_sheet",
+      magic: {
+        sheetKey: "adept_magic_sheet",
         sheetFile: "adept-attack-sheet.png",
         frameWidth: 768,
         frameHeight: 448,
@@ -82,7 +82,7 @@ export const UNIT_ANIMATION_ASSETS = {
         repeat: -1
       },
       hit: {
-        sheetKey: "adept_attack_sheet",
+        sheetKey: "adept_magic_sheet",
         sheetFile: "adept-attack-sheet.png",
         frameWidth: 768,
         frameHeight: 448,
@@ -124,7 +124,7 @@ export const UNIT_ANIMATION_PROFILES = {
     actions: {
       idle: { key: "adept_idle" },
       run: { key: "adept_run" },
-      attack: { key: "adept_attack" },
+      attack: { key: "adept_magic" },
       hit: { key: "adept_hit" },
       death: { key: "adept_death", lock: true }
     },

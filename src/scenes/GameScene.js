@@ -164,6 +164,8 @@ class Unit {
     this.animatedProfile = this.resolveAnimatedProfile(config.id);
     this.currentUnitAnim = "";
     this.unitAnimLocked = false;
+    this.actionAnimLockedUntil = 0;
+    this.actionAnimLockedKey = "";
     this.deathStarted = false;
     this.deathAnimDone = false;
     this.deathCleanupAt = 0;
@@ -408,6 +410,7 @@ class Unit {
   playUnitAnim(action, force = false) {
     if (!this.animatedProfile || !this.mainShape?.anims) return null;
     if (this.unitAnimLocked && !force && action !== "death") return null;
+    if (!force && action !== "death" && this.scene.time.now < this.actionAnimLockedUntil) return null;
 
     const resolved = this.resolveUnitAnimAction(action);
     if (!resolved?.key) return null;
@@ -418,7 +421,30 @@ class Unit {
 
     this.currentUnitAnim = resolved.key;
     this.mainShape.play(resolved.key, !force);
+    this.lockTransientActionAnim(resolved);
     return resolved;
+  }
+
+  lockTransientActionAnim(resolved) {
+    if (!resolved?.key) return;
+    if (resolved.action !== "attack" && resolved.action !== "hit") return;
+
+    const anim = this.scene.anims.get(resolved.key);
+    if (!anim || (anim.repeat ?? 0) !== 0) return;
+
+    const frameCount = anim.frames?.length || 1;
+    const frameRate = anim.frameRate || 10;
+    const durationMs = anim.duration || Math.round((frameCount / frameRate) * 1000);
+    const minimumMs = resolved.action === "attack" ? 220 : 140;
+    this.actionAnimLockedKey = resolved.key;
+    this.actionAnimLockedUntil = this.scene.time.now + Math.max(minimumMs, durationMs);
+
+    this.mainShape.once(`animationcomplete-${resolved.key}`, () => {
+      if (this.actionAnimLockedKey === resolved.key) {
+        this.actionAnimLockedUntil = 0;
+        this.actionAnimLockedKey = "";
+      }
+    });
   }
 
   isReadyForCleanup() {
