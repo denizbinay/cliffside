@@ -42,7 +42,7 @@ export default class UnitDevTool {
       .sort((a, b) => (a.tier || 0) - (b.tier || 0) || (a.cost || 0) - (b.cost || 0) || a.name.localeCompare(b.name))
       .map((unit) => unit.id);
 
-    this.selectedUnitId = this.unitIds.includes("breaker") ? "breaker" : this.unitIds[0] || null;
+    this.selectedUnitId = this.unitIds[0] || null;
 
     this.toggleKey = this.scene.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.U);
     this.keys = {

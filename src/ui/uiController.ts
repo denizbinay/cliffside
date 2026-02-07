@@ -21,7 +21,7 @@ const ROLE_COLORS: Record<string, string> = {
 const PHASE_LABELS = ["Early", "Mid", "Late", "Final"];
 
 function getUnitPortraitPath(unitId: string): string {
-  return `/assets/units/portrait-large-${unitId}.jpg`;
+  return `/assets/units/${unitId}/portraits/large.jpg`;
 }
 
 interface UiRefs {

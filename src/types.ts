@@ -316,6 +316,7 @@ export interface KeyedStripSheetDef {
   readonly repeat: number;
   readonly boxesKey?: string;
   readonly boxesFile?: string;
+  readonly frameSequence?: readonly number[];
 }
 
 export interface AtlasSheetDef {

@@ -205,9 +205,12 @@ export default class PreloadScene extends Phaser.Scene {
         const key = `${unitId}_${action}`;
         if (this.anims.exists(key)) return;
 
-        const hasFrameSequence = isSpritesheet(sheetDef) && Array.isArray(sheetDef.frameSequence);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const sheetAny = sheetDef as any;
+        const hasFrameSequence =
+          (isSpritesheet(sheetDef) || isKeyedStrip(sheetDef)) && Array.isArray(sheetAny.frameSequence);
         const frames = hasFrameSequence
-          ? (sheetDef as SpritesheetDef).frameSequence!.map((frame) => ({
+          ? sheetAny.frameSequence!.map((frame: number) => ({
               key: textureKey,
               frame: isAtlas(sheetDef) ? String(frame) : frame
             }))
@@ -405,19 +408,6 @@ export default class PreloadScene extends Phaser.Scene {
 
     const width = sourceImage.width;
     const height = sourceImage.height;
-
-    // Breaker strips ship as a 10-frame sheet with 3px outer margin.
-    // Using 8 frames (352px each) causes visible frame overlap artifacts.
-    if (sourceKey.startsWith("breaker_") && width === 2816 && height === 329) {
-      return {
-        frameWidth: 281,
-        frameHeight: 329,
-        margin: 3,
-        spacing: 0,
-        startFrame: 0,
-        endFrame: 9
-      };
-    }
 
     const minFrames = 4;
     const maxFrames = 24;
