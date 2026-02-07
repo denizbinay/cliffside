@@ -8,20 +8,31 @@ import {
   CASTLE_CONFIG,
   CONTROL_POINT_CONFIG,
   COMBAT_CONFIG,
+  WAVE_CONFIG,
   LAYOUT_STORAGE_KEY,
   createDefaultLayoutProfile
 } from "../config/GameConfig";
 
-import Unit from "../entities/Unit";
-import Turret from "../entities/Turret";
-import Castle from "../entities/Castle";
 import EconomySystem from "../systems/EconomySystem";
 import ShopManager from "../systems/ShopManager";
 import WaveManager from "../systems/WaveManager";
 import AIController from "../systems/AIController";
-import CombatSystem from "../systems/CombatSystem";
 import LayoutDevTool from "../devtools/LayoutDevTool";
 import UnitDevTool from "../devtools/UnitDevTool";
+import { GameSceneBridge } from "../ecs/bridges/GameSceneBridge";
+import {
+  createCastle,
+  createCastleVisuals,
+  createControlPoint,
+  createTurret,
+  createTurretVisuals,
+  createUnit,
+  createUnitVisuals
+} from "../ecs/factories";
+import { EntityType, Faction, Health, Position, Presence, Render, StatusEffects, FACTION } from "../ecs/components";
+import { ENTITY_TYPE } from "../ecs/constants";
+import { defineQuery, removeEntity } from "bitecs";
+import { buildGhostShapes } from "../utils/ghostShapes";
 
 import type {
   Side,
@@ -34,6 +45,9 @@ import type {
   IncomeDetails,
   UiState
 } from "../types";
+
+const presenceUnitsQuery = defineQuery([Position, Presence, Health, Faction, EntityType]);
+const unitEntitiesQuery = defineQuery([Position, Health, EntityType, Render, Faction]);
 
 interface GhostGhost {
   container: Phaser.GameObjects.Container;
@@ -79,24 +93,24 @@ export default class GameScene extends Phaser.Scene {
     | Phaser.GameObjects.Arc
   )[];
 
-  playerUnits!: Unit[];
-  aiUnits!: Unit[];
-  playerTurret!: Turret | null;
-  aiTurret!: Turret | null;
-  playerTurrets!: (Turret | null)[];
-  aiTurrets!: (Turret | null)[];
+  playerCastleEid!: number;
+  aiCastleEid!: number;
+  playerTurretEid!: number | null;
+  aiTurretEid!: number | null;
+  controlPointEids!: number[];
 
   economy!: EconomySystem;
   shopManager!: ShopManager;
   waveManager!: WaveManager;
   aiController!: AIController;
-  combatSystem!: CombatSystem;
+  ecsBridge!: GameSceneBridge;
 
   layoutDevTool!: LayoutDevTool;
   unitDevTool!: UnitDevTool;
 
   isGameOver!: boolean;
   lastCastleHitLog!: { player: number; ai: number };
+  lastCastleHp!: { player: number; ai: number };
   matchTime!: number;
   zoneOwner!: Side | "neutral";
   zoneCheckTimer!: number;
@@ -104,8 +118,6 @@ export default class GameScene extends Phaser.Scene {
   ghostAlpha!: number;
   ghostFormation!: { rows: GhostRow };
 
-  playerCastle!: Castle;
-  aiCastle!: Castle;
   _controlPoints!: ControlPoint[];
 
   // Layout computed properties
@@ -173,22 +185,17 @@ export default class GameScene extends Phaser.Scene {
     this.computeBoardLayout();
 
     this.bridgeVisuals = [];
+    this.ecsBridge = new GameSceneBridge(this);
     this.createBackground();
     this.createBridge();
     this.createCastles();
     this.createTurrets();
-
-    this.playerUnits = [];
-    this.aiUnits = [];
-    this.playerTurrets = [this.playerTurret];
-    this.aiTurrets = [this.aiTurret];
 
     // Systems
     this.economy = new EconomySystem(this);
     this.shopManager = new ShopManager(this);
     this.waveManager = new WaveManager(this);
     this.aiController = new AIController(this);
-    this.combatSystem = new CombatSystem(this);
 
     // Dev tools
     this.layoutDevTool = new LayoutDevTool(this);
@@ -197,12 +204,17 @@ export default class GameScene extends Phaser.Scene {
     this.unitDevTool.setup();
 
     this.events.once("shutdown", () => {
+      this.ecsBridge.destroy();
       this.layoutDevTool.destroy();
       this.unitDevTool.destroy();
     });
 
     this.isGameOver = false;
     this.lastCastleHitLog = { player: 0, ai: 0 };
+    this.lastCastleHp = {
+      player: this.getCastleHealth(SIDE.PLAYER),
+      ai: this.getCastleHealth(SIDE.AI)
+    };
     this.matchTime = 0;
 
     this.zoneOwner = "neutral";
@@ -341,6 +353,8 @@ export default class GameScene extends Phaser.Scene {
 
     if (this.isGameOver) return;
 
+    this.ecsBridge.update(delta, this.time.now);
+
     this.matchTime += delta;
 
     this.economy.update(delta);
@@ -349,7 +363,7 @@ export default class GameScene extends Phaser.Scene {
     this.abilityCooldowns.pulse = Math.max(0, this.abilityCooldowns.pulse - delta);
 
     this.waveManager.waveCountdown -= delta;
-    this.combatSystem.applyWaveLock(this.waveManager.waveCountdown);
+    this.waveManager.waveLocked = this.waveManager.waveCountdown <= WAVE_CONFIG.lockSeconds;
     while (this.waveManager.waveCountdown <= 0) {
       this.waveManager.waveNumber += 1;
       this.waveManager.sendWave(SIDE.PLAYER, (type, side, opts) => this.spawnUnit(type, side, opts));
@@ -358,11 +372,8 @@ export default class GameScene extends Phaser.Scene {
       this.shopManager.rollOffers(SIDE.PLAYER, stageIndex, true);
       this.shopManager.rollOffers(SIDE.AI, stageIndex, true);
       this.waveManager.waveCountdown += this.waveManager.getWaveInterval(this.matchTime);
-      this.combatSystem.applyWaveLock(this.waveManager.waveCountdown);
+      this.waveManager.waveLocked = this.waveManager.waveCountdown <= WAVE_CONFIG.lockSeconds;
     }
-
-    this.combatSystem.update(delta);
-    this.combatSystem.cleanupUnits();
     this.updateGhostFormation();
 
     this.zoneCheckTimer += delta;
@@ -371,9 +382,8 @@ export default class GameScene extends Phaser.Scene {
       this.updateControlPoints();
     }
 
-    this.combatSystem.checkGameOver();
-    this.playerCastle.updateHud();
-    this.aiCastle.updateHud();
+    this.checkGameOver();
+    this.updateCastleHud();
     this.emitUiState();
   }
 
@@ -520,6 +530,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     this._controlPoints = [];
+    this.controlPointEids = [];
     const hasControlRune = this.textures.exists("control_rune");
     const hasControlGlow = this.textures.exists("control_glow");
     const pointCount = CONTROL_POINT_CONFIG.count;
@@ -561,6 +572,11 @@ export default class GameScene extends Phaser.Scene {
           this.controlZoneHeight
         )
       });
+
+      if (this.ecsBridge?.world) {
+        const eid = createControlPoint(this.ecsBridge.world, { x, y: bridgeY, owner: "neutral" });
+        this.controlPointEids.push(eid);
+      }
     }
   }
 
@@ -581,24 +597,41 @@ export default class GameScene extends Phaser.Scene {
 
   createCastles(): void {
     const y = this.castleAnchorY;
-    this.playerCastle = new Castle(this, this.castleXLeft, y, SIDE.PLAYER, 0x5f7685, this.layoutProfile, () =>
-      this.getCastleVariant()
-    );
-    this.aiCastle = new Castle(this, this.castleXRight, y, SIDE.AI, 0x8a5a5a, this.layoutProfile, () =>
-      this.getCastleVariant()
-    );
+    this.destroyCastles();
 
-    // Castle hit logging
-    const originalPlayerTakeDamage = this.playerCastle.takeDamage.bind(this.playerCastle);
-    this.playerCastle.takeDamage = (amount: number) => {
-      originalPlayerTakeDamage(amount);
-      this.logCastleHit(SIDE.PLAYER);
-    };
+    this.playerCastleEid = createCastle(this.ecsBridge.world, {
+      side: SIDE.PLAYER,
+      x: this.castleXLeft,
+      y
+    });
+    createCastleVisuals({
+      scene: this,
+      eid: this.playerCastleEid,
+      side: SIDE.PLAYER,
+      layoutProfile: this.layoutProfile,
+      baseColor: 0x5f7685,
+      renderStore: this.ecsBridge.renderStore,
+      getCastleVariant: () => this.getCastleVariant()
+    });
 
-    const originalAiTakeDamage = this.aiCastle.takeDamage.bind(this.aiCastle);
-    this.aiCastle.takeDamage = (amount: number) => {
-      originalAiTakeDamage(amount);
-      this.logCastleHit(SIDE.AI);
+    this.aiCastleEid = createCastle(this.ecsBridge.world, {
+      side: SIDE.AI,
+      x: this.castleXRight,
+      y
+    });
+    createCastleVisuals({
+      scene: this,
+      eid: this.aiCastleEid,
+      side: SIDE.AI,
+      layoutProfile: this.layoutProfile,
+      baseColor: 0x8a5a5a,
+      renderStore: this.ecsBridge.renderStore,
+      getCastleVariant: () => this.getCastleVariant()
+    });
+
+    this.lastCastleHp = {
+      player: this.getCastleHealth(SIDE.PLAYER),
+      ai: this.getCastleHealth(SIDE.AI)
     };
   }
 
@@ -615,16 +648,31 @@ export default class GameScene extends Phaser.Scene {
     this.destroyTurrets();
     const offset = this.turretSideInset;
     const turretY = this.turretY;
-    this.playerTurret = new Turret(
-      this,
-      SIDE.PLAYER,
-      this.platformLeftEnd - offset,
-      turretY,
-      this.layoutProfile.turret
-    );
-    this.aiTurret = new Turret(this, SIDE.AI, this.platformRightStart + offset, turretY, this.layoutProfile.turret);
-    if (this.playerTurrets) this.playerTurrets = [this.playerTurret];
-    if (this.aiTurrets) this.aiTurrets = [this.aiTurret];
+    this.playerTurretEid = createTurret(this.ecsBridge.world, {
+      side: SIDE.PLAYER,
+      x: this.platformLeftEnd - offset,
+      y: turretY
+    });
+    createTurretVisuals({
+      scene: this,
+      eid: this.playerTurretEid,
+      side: SIDE.PLAYER,
+      metrics: this.layoutProfile.turret,
+      renderStore: this.ecsBridge.renderStore
+    });
+
+    this.aiTurretEid = createTurret(this.ecsBridge.world, {
+      side: SIDE.AI,
+      x: this.platformRightStart + offset,
+      y: turretY
+    });
+    createTurretVisuals({
+      scene: this,
+      eid: this.aiTurretEid,
+      side: SIDE.AI,
+      metrics: this.layoutProfile.turret,
+      renderStore: this.ecsBridge.renderStore
+    });
   }
 
   // --- Unit Spawning ---
@@ -664,13 +712,17 @@ export default class GameScene extends Phaser.Scene {
 
     const spawnX =
       side === SIDE.PLAYER ? this.platformLeftStart + this.unitSpawnInset : this.platformRightEnd - this.unitSpawnInset;
-    const unit = new Unit(this, config, side, spawnX + offset, this.unitLaneY, modifiers);
-    unit.presenceMult = presenceMult;
-    if (side === SIDE.PLAYER) {
-      this.playerUnits.push(unit);
-    } else {
-      this.aiUnits.push(unit);
-    }
+    const eid = createUnit(this.ecsBridge.world, {
+      config,
+      side,
+      x: spawnX + offset,
+      y: this.unitLaneY,
+      modifiers,
+      presenceMult,
+      configStore: this.ecsBridge.configStore,
+      pool: this.ecsBridge.unitPool
+    });
+    createUnitVisuals(this, eid, config, side, this.ecsBridge.renderStore);
 
     this.spawnPulse(spawnX + offset, this.unitLaneY, config.color);
     this.spawnCallout(spawnX + offset, this.unitLaneY + this.unitCalloutOffsetY, config.name, side);
@@ -717,17 +769,19 @@ export default class GameScene extends Phaser.Scene {
     this.abilityCooldowns[id] = ability.cooldown;
 
     if (id === "healWave") {
-      this.castleHealWave(this.playerCastle, ability as import("../types").HealWaveAbility);
+      this.castleHealWave(SIDE.PLAYER, ability as import("../types").HealWaveAbility);
     }
     if (id === "pulse") {
-      this.castlePulse(this.playerCastle, ability as import("../types").PulseAbility);
+      this.castlePulse(SIDE.PLAYER, ability as import("../types").PulseAbility);
     }
     this.events.emit("log", { type: "ability", name: ability.name });
   }
 
-  castleHealWave(castle: Castle, ability: import("../types").HealWaveAbility): void {
+  castleHealWave(side: Side, ability: import("../types").HealWaveAbility): void {
+    const castlePos = this.getCastlePosition(side);
+    if (!castlePos) return;
     const radius = Math.max(this.playArea.width, this.playArea.height) * 0.75;
-    const wave = this.add.circle(castle.x, castle.y, 20, 0x9fd6aa, 0.5);
+    const wave = this.add.circle(castlePos.x, castlePos.y, 20, 0x9fd6aa, 0.5);
     this.tweens.add({
       targets: wave,
       radius,
@@ -736,7 +790,7 @@ export default class GameScene extends Phaser.Scene {
       onComplete: () => wave.destroy()
     });
 
-    const label = this.add.text(castle.x, castle.y - 90, "Heal Wave", {
+    const label = this.add.text(castlePos.x, castlePos.y - 90, "Heal Wave", {
       fontFamily: "Cinzel",
       fontSize: "16px",
       color: "#dff1da"
@@ -750,15 +804,21 @@ export default class GameScene extends Phaser.Scene {
       onComplete: () => label.destroy()
     });
 
-    for (const unit of this.playerUnits) {
-      unit.heal(ability.amount);
+    const entities = unitEntitiesQuery(this.ecsBridge.world);
+    for (const eid of entities) {
+      if (!(EntityType.value[eid] & ENTITY_TYPE.UNIT)) continue;
+      if (Faction.value[eid] !== FACTION.PLAYER) continue;
+      if (Health.current[eid] <= 0) continue;
+      Health.current[eid] = Math.min(Health.max[eid], Health.current[eid] + ability.amount);
     }
   }
 
-  castlePulse(castle: Castle, ability: import("../types").PulseAbility): void {
+  castlePulse(side: Side, ability: import("../types").PulseAbility): void {
+    const castlePos = this.getCastlePosition(side);
+    if (!castlePos) return;
     const zone = this.getPlatformZone(SIDE.PLAYER, 40);
     const centerX = zone.x + zone.width / 2;
-    const pulse = this.add.circle(centerX, castle.y, 30, 0xffd58a, 0.4);
+    const pulse = this.add.circle(centerX, castlePos.y, 30, 0xffd58a, 0.4);
     this.tweens.add({
       targets: pulse,
       radius: zone.width * 0.6,
@@ -767,7 +827,7 @@ export default class GameScene extends Phaser.Scene {
       onComplete: () => pulse.destroy()
     });
 
-    const label = this.add.text(castle.x, castle.y - 90, "Defensive Pulse", {
+    const label = this.add.text(castlePos.x, castlePos.y - 90, "Defensive Pulse", {
       fontFamily: "Cinzel",
       fontSize: "16px",
       color: "#f2ddae"
@@ -781,11 +841,16 @@ export default class GameScene extends Phaser.Scene {
       onComplete: () => label.destroy()
     });
 
-    for (const unit of this.aiUnits) {
-      if (Phaser.Geom.Rectangle.Contains(zone, unit.body.x, unit.body.y)) {
-        unit.applyStatus({ type: "stun", duration: ability.stunDuration }, SIDE.PLAYER);
-        unit.applyStatus({ type: "pushback", strength: ability.pushStrength }, SIDE.PLAYER);
-      }
+    const entities = unitEntitiesQuery(this.ecsBridge.world);
+    for (const eid of entities) {
+      if (!(EntityType.value[eid] & ENTITY_TYPE.UNIT)) continue;
+      if (Faction.value[eid] !== FACTION.AI) continue;
+      if (Health.current[eid] <= 0) continue;
+      if (!Phaser.Geom.Rectangle.Contains(zone, Position.x[eid], Position.y[eid])) continue;
+
+      StatusEffects.stunTimer[eid] = Math.max(StatusEffects.stunTimer[eid], ability.stunDuration);
+      const direction = side === SIDE.PLAYER ? 1 : -1;
+      Position.x[eid] += direction * ability.pushStrength;
     }
   }
 
@@ -794,21 +859,23 @@ export default class GameScene extends Phaser.Scene {
   updateControlPoints(): void {
     let playerCount = 0;
     let aiCount = 0;
+    const world = this.ecsBridge.world;
+    const unitEntities = presenceUnitsQuery(world);
 
     for (const point of this.controlPoints) {
       let playerPresence = 0;
       let aiPresence = 0;
 
-      for (const unit of this.playerUnits) {
-        if (!unit.isAlive()) continue;
-        if (Phaser.Geom.Rectangle.Contains(point.zone, unit.body.x, unit.body.y)) {
-          playerPresence += unit.config.presence * (unit.presenceMult || 1);
-        }
-      }
-      for (const unit of this.aiUnits) {
-        if (!unit.isAlive()) continue;
-        if (Phaser.Geom.Rectangle.Contains(point.zone, unit.body.x, unit.body.y)) {
-          aiPresence += unit.config.presence * (unit.presenceMult || 1);
+      for (const eid of unitEntities) {
+        if (!(EntityType.value[eid] & ENTITY_TYPE.UNIT)) continue;
+        if (Health.current[eid] <= 0) continue;
+        if (!Phaser.Geom.Rectangle.Contains(point.zone, Position.x[eid], Position.y[eid])) continue;
+
+        const presence = Presence.baseValue[eid] * Presence.multiplier[eid];
+        if (Faction.value[eid] === FACTION.PLAYER) {
+          playerPresence += presence;
+        } else if (Faction.value[eid] === FACTION.AI) {
+          aiPresence += presence;
         }
       }
 
@@ -834,6 +901,13 @@ export default class GameScene extends Phaser.Scene {
 
       if (point.owner === SIDE.PLAYER) playerCount += 1;
       if (point.owner === SIDE.AI) aiCount += 1;
+
+      const pointIndex = point.index;
+      const pointEid = this.controlPointEids?.[pointIndex];
+      if (pointEid) {
+        Faction.value[pointEid] =
+          point.owner === SIDE.PLAYER ? FACTION.PLAYER : point.owner === SIDE.AI ? FACTION.AI : FACTION.NEUTRAL;
+      }
 
       const tint = point.owner === SIDE.PLAYER ? 0x6fa3d4 : point.owner === SIDE.AI ? 0xb36a6a : 0x3a3f4f;
       point.marker.setFillStyle(tint, 0.65);
@@ -910,7 +984,7 @@ export default class GameScene extends Phaser.Scene {
         }
         if (ghost.currentType !== typeId) {
           ghost.container.removeAll(true);
-          const shapes = Unit.buildGhostShapes(this, typeId, UNIT_TYPES);
+          const shapes = buildGhostShapes(this, typeId, UNIT_TYPES);
           ghost.container.add(shapes);
           ghost.currentType = typeId;
         }
@@ -941,12 +1015,12 @@ export default class GameScene extends Phaser.Scene {
       aiResources: this.economy.aiResources,
       aiIncome: this.economy.getIncomeDetails(SIDE.AI).total,
       playerCastle: {
-        hp: this.playerCastle?.hp || 0,
-        maxHp: this.playerCastle?.maxHp || 1
+        hp: this.getCastleHealth(SIDE.PLAYER),
+        maxHp: this.getCastleMaxHp(SIDE.PLAYER)
       },
       aiCastle: {
-        hp: this.aiCastle?.hp || 0,
-        maxHp: this.aiCastle?.maxHp || 1
+        hp: this.getCastleHealth(SIDE.AI),
+        maxHp: this.getCastleMaxHp(SIDE.AI)
       },
       controlPoints: (this.controlPoints || []).map((point) => point.owner),
       wave: {
@@ -976,7 +1050,99 @@ export default class GameScene extends Phaser.Scene {
   }
 
   emitUiState(): void {
-    this.events.emit("ui-state", this.buildUiState());
+    const legacyState = this.buildUiState();
+    const ecsState = this.ecsBridge?.uiStateBridge?.buildState(legacyState) ?? legacyState;
+    this.events.emit("ui-state", ecsState);
+  }
+
+  getCastleEidByFaction(faction: number): number | null {
+    if (faction === FACTION.PLAYER) return this.playerCastleEid || null;
+    if (faction === FACTION.AI) return this.aiCastleEid || null;
+    return null;
+  }
+
+  getEntityX(eid: number): number | null {
+    if (!eid) return null;
+    return Position.x[eid];
+  }
+
+  getCastleHealth(side: Side): number {
+    const eid = side === SIDE.PLAYER ? this.playerCastleEid : this.aiCastleEid;
+    if (!eid) return 0;
+    return Health.current[eid] || 0;
+  }
+
+  getCastleMaxHp(side: Side): number {
+    const eid = side === SIDE.PLAYER ? this.playerCastleEid : this.aiCastleEid;
+    if (!eid) return 1;
+    return Health.max[eid] || 1;
+  }
+
+  getCastlePosition(side: Side): { x: number; y: number } | null {
+    const eid = side === SIDE.PLAYER ? this.playerCastleEid : this.aiCastleEid;
+    if (!eid) return null;
+    return { x: Position.x[eid], y: Position.y[eid] };
+  }
+
+  handleEntityCleanup(eid: number): void {
+    if (!(EntityType.value[eid] & ENTITY_TYPE.UNIT)) return;
+    const killer = Faction.value[eid] === FACTION.PLAYER ? SIDE.AI : SIDE.PLAYER;
+    this.economy.addKillBounty(killer, 1);
+  }
+
+  updateCastleHud(): void {
+    this.trackCastleDamage();
+    const renderStore = this.ecsBridge.renderStore;
+    const sides: Side[] = [SIDE.PLAYER, SIDE.AI];
+
+    for (const side of sides) {
+      const eid = side === SIDE.PLAYER ? this.playerCastleEid : this.aiCastleEid;
+      if (!eid) continue;
+      const storeIndex = Render.storeIndex[eid];
+      if (!storeIndex) continue;
+
+      const renderData = renderStore.get(storeIndex);
+      if (!renderData?.healthFill) continue;
+
+      const maxHp = Health.max[eid] || 1;
+      const ratio = Phaser.Math.Clamp(Health.current[eid] / maxHp, 0, 1);
+      const fillColor = ratio > 0.65 ? 0x79d27e : ratio > 0.35 ? 0xf0be64 : 0xd96c6c;
+      if (renderData.healthFill.setFillStyle) {
+        renderData.healthFill.setFillStyle(fillColor, 1);
+      }
+    }
+  }
+
+  trackCastleDamage(): void {
+    const playerHp = this.getCastleHealth(SIDE.PLAYER);
+    const aiHp = this.getCastleHealth(SIDE.AI);
+
+    if (playerHp < this.lastCastleHp.player) {
+      this.logCastleHit(SIDE.PLAYER);
+    }
+    if (aiHp < this.lastCastleHp.ai) {
+      this.logCastleHit(SIDE.AI);
+    }
+
+    this.lastCastleHp = { player: playerHp, ai: aiHp };
+  }
+
+  destroyEcsEntity(eid: number): void {
+    if (!eid) return;
+    const storeIndex = Render.storeIndex[eid];
+    if (storeIndex) {
+      this.ecsBridge.renderStore.delete(storeIndex);
+    }
+    removeEntity(this.ecsBridge.world, eid);
+  }
+
+  destroyControlPointEntities(): void {
+    if (!this.controlPointEids?.length) return;
+    for (const eid of this.controlPointEids) {
+      if (!eid) continue;
+      removeEntity(this.ecsBridge.world, eid);
+    }
+    this.controlPointEids = [];
   }
 
   // --- Utility ---
@@ -999,49 +1165,31 @@ export default class GameScene extends Phaser.Scene {
     );
   }
 
-  cleanupUnits(): void {
-    const beforePlayer = this.playerUnits.length;
-    const beforeAi = this.aiUnits.length;
-
-    this.playerUnits = this.playerUnits.filter((unit) => {
-      if (unit.isAlive() || !unit.isReadyForCleanup()) return true;
-      unit.destroy();
-      return false;
-    });
-
-    this.aiUnits = this.aiUnits.filter((unit) => {
-      if (unit.isAlive() || !unit.isReadyForCleanup()) return true;
-      unit.destroy();
-      return false;
-    });
-
-    const deadPlayer = beforePlayer - this.playerUnits.length;
-    const deadAi = beforeAi - this.aiUnits.length;
-    // Kill bounties: award to the side that killed the enemy units
-    this.economy.addKillBounty(SIDE.AI, deadPlayer);
-    this.economy.addKillBounty(SIDE.PLAYER, deadAi);
-  }
-
   checkGameOver(): void {
-    if (this.playerCastle.hp <= 0 || this.aiCastle.hp <= 0) {
+    if (this.getCastleHealth(SIDE.PLAYER) <= 0 || this.getCastleHealth(SIDE.AI) <= 0) {
       this.isGameOver = true;
-      const winner = this.playerCastle.hp <= 0 ? "AI" : "Player";
+      const winner = this.getCastleHealth(SIDE.PLAYER) <= 0 ? "AI" : "Player";
       this.events.emit("game-over", winner);
       this.time.addEvent({
         delay: 100,
         callback: () => {
-          this.playerUnits.forEach((unit) => unit.destroy());
-          this.aiUnits.forEach((unit) => unit.destroy());
+          this.clearCombatUnits();
         }
       });
     }
   }
 
   clearCombatUnits(): void {
-    for (const unit of this.playerUnits || []) unit.destroy();
-    for (const unit of this.aiUnits || []) unit.destroy();
-    this.playerUnits = [];
-    this.aiUnits = [];
+    const world = this.ecsBridge.world;
+    const entities = unitEntitiesQuery(world);
+    for (const eid of entities) {
+      if (!(EntityType.value[eid] & ENTITY_TYPE.UNIT)) continue;
+      const storeIndex = Render.storeIndex[eid];
+      if (storeIndex) {
+        this.ecsBridge.renderStore.delete(storeIndex);
+      }
+      this.ecsBridge.unitPool.release(world, eid);
+    }
   }
 
   // --- Layout ---
@@ -1203,23 +1351,32 @@ export default class GameScene extends Phaser.Scene {
   }
 
   destroyCastles(): void {
-    this.playerCastle?.destroy();
-    this.aiCastle?.destroy();
-    // @ts-expect-error reset
-    this.playerCastle = null;
-    // @ts-expect-error reset
-    this.aiCastle = null;
+    const world = this.ecsBridge?.world;
+    if (world && this.playerCastleEid) {
+      this.destroyEcsEntity(this.playerCastleEid);
+    }
+    if (world && this.aiCastleEid) {
+      this.destroyEcsEntity(this.aiCastleEid);
+    }
+    this.playerCastleEid = 0;
+    this.aiCastleEid = 0;
   }
 
   destroyTurrets(): void {
-    if (this.playerTurret) this.playerTurret.destroy();
-    if (this.aiTurret) this.aiTurret.destroy();
-    this.playerTurret = null;
-    this.aiTurret = null;
+    const world = this.ecsBridge?.world;
+    if (world && this.playerTurretEid) {
+      this.destroyEcsEntity(this.playerTurretEid);
+    }
+    if (world && this.aiTurretEid) {
+      this.destroyEcsEntity(this.aiTurretEid);
+    }
+    this.playerTurretEid = null;
+    this.aiTurretEid = null;
   }
 
   rebuildLayoutVisuals(): void {
     this.clearBridgeVisuals();
+    this.destroyControlPointEntities();
     this.destroyCastles();
     this.destroyTurrets();
     this.createBridge();

@@ -1,6 +1,5 @@
 import { UNIT_TYPES } from "../data/units";
 import { SIDE, AI_CONFIG } from "../config/GameConfig";
-import type Castle from "../entities/Castle";
 import type { Side, ControlPoint } from "../types";
 import type EconomySystem from "./EconomySystem";
 import type ShopManager from "./ShopManager";
@@ -9,8 +8,7 @@ import type WaveManager from "./WaveManager";
 interface AIScene {
   isGameOver: boolean;
   matchTime: number;
-  aiCastle: Castle;
-  playerCastle: Castle;
+  getCastleHealth: (side: Side) => number;
   controlPoints: ControlPoint[];
   waveManager: WaveManager;
   shopManager: ShopManager;
@@ -42,7 +40,10 @@ export default class AIController {
     const playerPoints = this.scene.controlPoints.filter((point) => point.owner === SIDE.PLAYER).length;
 
     let stanceId = "normal";
-    if (this.scene.aiCastle.hp < this.scene.playerCastle.hp * AI_CONFIG.defensiveHpThreshold) {
+    if (
+      this.scene.getCastleHealth(SIDE.AI) <
+      this.scene.getCastleHealth(SIDE.PLAYER) * AI_CONFIG.defensiveHpThreshold
+    ) {
       stanceId = "defensive";
     } else if (aiPoints < playerPoints) {
       stanceId = "aggressive";

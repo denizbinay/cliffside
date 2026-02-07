@@ -423,6 +423,10 @@ export interface UiState {
   waveSlots: WaveSlots;
   waveStance: StanceId;
   abilityCooldowns: Record<AbilityId, number>;
+  playerAliveUnits?: number;
+  aiAliveUnits?: number;
+  playerPresence?: number;
+  aiPresence?: number;
   isGameOver: boolean;
 }
 
