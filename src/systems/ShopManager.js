@@ -1,22 +1,10 @@
-/**
- * ShopManager - Handles shop offers and rerolls.
- * Refactored to use GameContext instead of Scene.
- */
-
 import { UNIT_TYPES } from "../data/units.js";
 import { SHOP_CONFIG } from "../data/shop.js";
 import { SIDE } from "../config/GameConfig.js";
-import { GameEvents } from "../core/EventBus.js";
 
 export default class ShopManager {
-  /**
-   * @param {GameContext} ctx - The game context
-   */
-  constructor(ctx) {
-    this.ctx = ctx;
-    this.state = ctx.state;
-    this.events = ctx.events;
-
+  constructor(scene) {
+    this.scene = scene;
     this.shops = {
       [SIDE.PLAYER]: { offers: [], rerolls: 0 },
       [SIDE.AI]: { offers: [], rerolls: 0 }
@@ -92,8 +80,6 @@ export default class ShopManager {
     }
 
     shop.offers = offers;
-
-    this.events.emit(GameEvents.SHOP_REROLLED, { side, offers });
   }
 
   getRerollCost(side) {
@@ -103,16 +89,13 @@ export default class ShopManager {
   }
 
   requestReroll(side, economy, stageIndex) {
-    if (this.state.isGameOver) return false;
-    if (this.state.waveLocked) return false;
-
+    if (this.scene.isGameOver) return false;
+    if (this.scene.waveLocked) return false;
     const cost = this.getRerollCost(side);
     if (!economy.spend(side, cost)) return false;
-
     this.shops[side].rerolls += 1;
     this.rollOffers(side, stageIndex, false);
     economy.emitResourceUpdate();
-
     return true;
   }
 
@@ -125,14 +108,9 @@ export default class ShopManager {
   claimOffer(side, type) {
     const shop = this.shops[side];
     if (!shop) return false;
-
     const index = shop.offers.indexOf(type);
     if (index === -1) return false;
-
     shop.offers[index] = null;
-
-    this.events.emit(GameEvents.SHOP_OFFER_CLAIMED, { side, type, index });
-
     return true;
   }
 
