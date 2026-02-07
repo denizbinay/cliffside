@@ -85,6 +85,7 @@ export default class UIController {
     this.pendingTooltipTarget = null;
 
     this.buildDOM();
+    this.setHudVisible(false);
     this.bindScene();
     this.updateLayout();
 
@@ -190,7 +191,15 @@ export default class UIController {
           <div class="wave-warning-label">WAVE IN</div>
           <div class="wave-warning-count" data-ui="wave-warning-count">5</div>
         </div>
-        <div class="ui-gameover" data-ui="gameover"></div>
+        <div class="ui-gameover" data-ui="gameover">
+          <div class="gameover-content">
+            <div class="gameover-title" data-ui="gameover-title"></div>
+            <div class="gameover-buttons">
+              <button class="gameover-button" data-action="play-again">Play Again</button>
+              <button class="gameover-button" data-action="back-to-menu">Back to Menu</button>
+            </div>
+          </div>
+        </div>
       </div>
     `;
 
@@ -226,12 +235,23 @@ export default class UIController {
     infoBtn.addEventListener("mouseenter", (event) => this.showTooltip(event.currentTarget as HTMLElement));
     infoBtn.addEventListener("mouseleave", () => this.hideTooltip());
 
+    const playAgainBtn = root.querySelector("[data-action='play-again']") as HTMLButtonElement;
+    playAgainBtn?.addEventListener("click", () => this.handlePlayAgain());
+
+    const menuBtn = root.querySelector("[data-action='back-to-menu']") as HTMLButtonElement;
+    menuBtn?.addEventListener("click", () => this.handleBackToMenu());
+
     this.buildShopCards();
     this.buildAbilityButtons();
     this.buildStanceButtons();
   }
 
   bindScene(): void {
+    if (this.bindTimer !== undefined) {
+      window.clearInterval(this.bindTimer);
+      this.bindTimer = undefined;
+    }
+
     const tryBind = () => {
       const scene = this.game?.scene?.getScene("Game");
       if (scene && scene.sys && scene.sys.isActive()) {
@@ -256,10 +276,17 @@ export default class UIController {
     scene.events.on("ui-state", (state: UiState) => this.render(state));
     scene.events.on("game-over", (winner: string) => this.showGameOver(winner));
     scene.events.on("shutdown", () => this.clearScene());
+    this.setHudVisible(true);
   }
 
   clearScene(): void {
     this.scene = null;
+    this.setHudVisible(false);
+  }
+
+  setHudVisible(visible: boolean): void {
+    if (!this.layer) return;
+    this.layer.style.display = visible ? "" : "none";
   }
 
   updateLayout(): void {
@@ -751,7 +778,33 @@ export default class UIController {
 
   showGameOver(winner: string): void {
     if (!this.refs.gameover) return;
-    this.refs.gameover.textContent = `${winner} wins`;
+    const title = this.refs.gameover.querySelector("[data-ui='gameover-title']");
+    if (title) title.textContent = `${winner} wins`;
     this.refs.gameover.classList.add("is-visible");
+  }
+
+  hideGameOver(): void {
+    if (!this.refs.gameover) return;
+    this.refs.gameover.classList.remove("is-visible");
+  }
+
+  handlePlayAgain(): void {
+    this.hideGameOver();
+    this.clearScene();
+    const sceneManager = this.game?.scene;
+    if (!sceneManager) return;
+    sceneManager.stop("Game");
+    sceneManager.start("Game");
+    this.bindScene();
+  }
+
+  handleBackToMenu(): void {
+    this.hideGameOver();
+    this.clearScene();
+    const sceneManager = this.game?.scene;
+    if (!sceneManager) return;
+    sceneManager.stop("Game");
+    sceneManager.start("Title");
+    this.bindScene();
   }
 }

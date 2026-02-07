@@ -121,7 +121,8 @@ export default class PreloadScene extends Phaser.Scene {
     this.createUnitAnimationSheets();
     this.createUnitAnimations();
 
-    this.scene.start("Game");
+    const isDevMode = new URLSearchParams(window.location.search).has("dev");
+    this.scene.start(isDevMode ? "Game" : "Title");
   }
 
   createTurretHeadKeyedTexture(): void {

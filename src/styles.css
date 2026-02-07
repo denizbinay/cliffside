@@ -708,7 +708,9 @@ canvas {
   font-size: clamp(26px, 4.2vw, 58px);
   letter-spacing: 0.12em;
   color: #f7dfb8;
-  text-shadow: 0 0 18px rgba(255, 180, 95, 0.6), 0 0 40px rgba(255, 120, 55, 0.35);
+  text-shadow:
+    0 0 18px rgba(255, 180, 95, 0.6),
+    0 0 40px rgba(255, 120, 55, 0.35);
 }
 
 .wave-warning-count {
@@ -717,7 +719,9 @@ canvas {
   font-size: clamp(92px, 17vw, 260px);
   line-height: 0.9;
   color: #fff0d6;
-  text-shadow: 0 0 22px rgba(255, 196, 108, 0.9), 0 0 60px rgba(255, 120, 55, 0.55);
+  text-shadow:
+    0 0 22px rgba(255, 196, 108, 0.9),
+    0 0 60px rgba(255, 120, 55, 0.55);
   animation: wave-warning-pulse 0.7s ease-in-out infinite;
 }
 
@@ -815,4 +819,139 @@ canvas {
 
 .shop-slot-placeholder.is-visible {
   display: flex;
+}
+
+/* ── Title Screen ────────────────────────────────────────── */
+
+.title-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at 40% 30%, rgba(44, 52, 69, 0.95) 0%, rgba(20, 24, 32, 0.98) 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.title-overlay.is-visible {
+  opacity: 1;
+}
+
+.title-card {
+  text-align: center;
+  max-width: 520px;
+  padding: 48px 40px;
+}
+
+.title-heading {
+  font-family: "Cinzel", "Georgia", serif;
+  font-weight: 700;
+  font-size: 36px;
+  color: var(--ui-accent);
+  margin: 0 0 12px;
+  letter-spacing: 1px;
+}
+
+.title-tagline {
+  font-family: "Alegreya Sans", sans-serif;
+  font-size: 16px;
+  color: var(--ui-subtle);
+  margin: 0 0 32px;
+  font-style: italic;
+}
+
+.title-rules {
+  text-align: left;
+  background: rgba(31, 35, 45, 0.6);
+  border: 1px solid var(--ui-stroke);
+  border-radius: 10px;
+  padding: 16px 20px;
+  margin-bottom: 32px;
+}
+
+.title-rules p {
+  font-family: "Alegreya Sans", sans-serif;
+  font-size: 14px;
+  color: var(--ui-text);
+  margin: 0 0 8px;
+  line-height: 1.5;
+}
+
+.title-rules p:last-child {
+  margin-bottom: 0;
+}
+
+.title-button {
+  font-family: "Cinzel", "Georgia", serif;
+  font-weight: 600;
+  font-size: 18px;
+  color: var(--ui-text);
+  background: linear-gradient(180deg, #3a4258 0%, #2a2f3d 100%);
+  border: 1px solid var(--ui-stroke);
+  border-radius: 10px;
+  padding: 14px 48px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.1s ease;
+  letter-spacing: 0.5px;
+}
+
+.title-button:hover {
+  background: linear-gradient(180deg, #4a5570 0%, #353b4d 100%);
+  border-color: var(--ui-accent);
+}
+
+.title-button:active {
+  transform: scale(0.97);
+}
+
+/* ── Game Over (enhanced) ────────────────────────────────── */
+
+.gameover-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+}
+
+.gameover-title {
+  font-family: "Cinzel", "Georgia", serif;
+  font-size: 34px;
+  color: #f3ead7;
+}
+
+.gameover-buttons {
+  display: flex;
+  gap: 16px;
+}
+
+.gameover-button {
+  font-family: "Cinzel", "Georgia", serif;
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--ui-text);
+  background: linear-gradient(180deg, #3a4258 0%, #2a2f3d 100%);
+  border: 1px solid var(--ui-stroke);
+  border-radius: 10px;
+  padding: 12px 32px;
+  cursor: pointer;
+  pointer-events: auto;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.1s ease;
+  letter-spacing: 0.5px;
+}
+
+.gameover-button:hover {
+  background: linear-gradient(180deg, #4a5570 0%, #353b4d 100%);
+  border-color: var(--ui-accent);
+}
+
+.gameover-button:active {
+  transform: scale(0.97);
 }

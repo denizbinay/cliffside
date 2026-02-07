@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import BootScene from "./scenes/BootScene";
 import PreloadScene from "./scenes/PreloadScene";
+import TitleScene from "./scenes/TitleScene";
 import GameScene from "./scenes/GameScene";
 import UIController from "./ui/uiController";
 
@@ -14,7 +15,7 @@ const config: Phaser.Types.Core.GameConfig = {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH
   },
-  scene: [BootScene, PreloadScene, GameScene]
+  scene: [BootScene, PreloadScene, TitleScene, GameScene]
 };
 
 // Extend the Phaser.Game interface to include our custom property
