@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { UNIT_TYPES } from "../data/units.js";
+import { UNIT_ANIMATION_PROFILES } from "../data/unitAnimationProfiles.js";
 import { ABILITIES } from "../data/abilities.js";
 import { SHOP_CONFIG } from "../data/shop.js";
 import { STANCES } from "../data/stances.js";
@@ -8,6 +9,122 @@ const SIDE = {
   PLAYER: "player",
   AI: "ai"
 };
+
+const CASTLE_VARIANTS = [
+  {
+    id: "v1",
+    label: "Twin V1",
+    baseKey: "castle_twin_base_v1",
+    towerKey: "castle_twin_tower_v1"
+  },
+  {
+    id: "v2",
+    label: "Twin V2",
+    baseKey: "castle_twin_base_v2",
+    towerKey: "castle_twin_tower_v2"
+  },
+  {
+    id: "v3",
+    label: "Twin V3",
+    baseKey: "castle_twin_base_v3",
+    towerKey: "castle_twin_tower_v3"
+  }
+];
+
+const CASTLE_METRICS = {
+  baseWidth: 132,
+  baseHeight: 176,
+  baseCenterYOffset: 28,
+  baseFootInset: 10,
+  towerWidth: 88,
+  towerHeight: 60,
+  towerOffsetY: -56,
+  bannerOffsetX: 20,
+  bannerOffsetY: -76,
+  hpOffsetX: 0,
+  hpOffsetY: -118,
+  hpWidth: 220,
+  hpHeight: 20
+};
+
+const LAYOUT_STORAGE_KEY = "layoutProfileV4";
+
+function createDefaultLayoutProfile(playArea) {
+  return {
+    mirrorMode: true,
+    castle: {
+      playerX: 66.11289364230541,
+      aiX: 1213.8871063576946,
+      anchorY: 291.6164943553179,
+      baseWidth: CASTLE_METRICS.baseWidth,
+      baseHeight: CASTLE_METRICS.baseHeight,
+      baseCenterYOffset: CASTLE_METRICS.baseCenterYOffset,
+      towerWidth: CASTLE_METRICS.towerWidth,
+      towerHeight: CASTLE_METRICS.towerHeight,
+      towerOffsetY: CASTLE_METRICS.towerOffsetY,
+      bannerOffsetX: CASTLE_METRICS.bannerOffsetX,
+      bannerOffsetY: CASTLE_METRICS.bannerOffsetY,
+      hpOffsetX: CASTLE_METRICS.hpOffsetX,
+      hpOffsetY: CASTLE_METRICS.hpOffsetY,
+      hpWidth: CASTLE_METRICS.hpWidth,
+      hpHeight: CASTLE_METRICS.hpHeight
+    },
+    decks: {
+      foundation: {
+        leftStart: -0.9007724301842046,
+        leftEnd: 140.1152703505645,
+        rightStart: 1139.8847296494355,
+        rightEnd: 1280.9007724301841,
+        topY: 397.3348544266191,
+        height: 84
+      },
+      spawn: {
+        leftStart: 69.13131313131312,
+        leftEnd: 213.0469399881164,
+        rightStart: 1066.9530600118835,
+        rightEnd: 1210.8686868686868,
+        topY: 418.60045157456915,
+        height: 60
+      }
+    },
+    bridge: {
+      topY: 411.755531788473,
+      plankOffsetY: 24,
+      thickness: 14,
+      showPillars: false,
+      showRopes: false,
+      showControlFx: false,
+      ropeTopOffset: 0,
+      ropeBottomOffset: 48,
+      pillarOffsetY: 23,
+      pillarHeight: 42,
+      pillarStep: 90
+    },
+    turret: {
+      sideInset: 26.366013071895452,
+      yOffset: 9.61913250148541,
+      showBase: false,
+      baseWidth: 88.28363730688557,
+      baseHeight: 68.21917428259343,
+      headWidth: 56.180496468018134,
+      headHeight: 56.180496468018134,
+      hpOffsetX: 0,
+      hpOffsetY: -36,
+      hpWidth: 44,
+      hpHeight: 5
+    },
+    units: {
+      spawnInset: 80.30897207367796,
+      laneY: 410.9949851455734,
+      calloutOffsetY: -40
+    },
+    control: {
+      y: 395.3895187165776,
+      zoneWidth: 120,
+      zoneHeight: 52
+    }
+  };
+}
 
 class Unit {
   constructor(scene, config, side, x, y, modifiers = {}) {
@@ -42,19 +159,41 @@ class Unit {
 
     this.size = this.role === "frontline" ? 40 : this.role === "damage" ? 32 : 34;
     this.body = scene.add.container(x, y);
+    this.body.setDepth(4);
     this.baseColor = config.color;
-    const shapeData = this.buildShape(config.id, config.color);
-    this.mainShape = shapeData.main;
-    this.body.add([shapeData.main, ...shapeData.extras]);
-
-    this.roleBadge = this.buildRoleBadge(this.role);
-    this.body.add(this.roleBadge);
+    this.animatedProfile = this.resolveAnimatedProfile(config.id);
+    this.currentUnitAnim = "";
+    this.unitAnimLocked = false;
+    this.deathStarted = false;
+    this.deathAnimDone = false;
+    this.deathCleanupAt = 0;
+    if (this.animatedProfile) {
+      const animatedSprite = scene.add.sprite(0, 0, this.animatedProfile.textureKey, 0);
+      const sizeScale = this.animatedProfile.sizeScale || 2;
+      const widthScale = this.animatedProfile.widthScale || 1;
+      const heightScale = this.animatedProfile.heightScale || 1;
+      animatedSprite.setDisplaySize(this.size * sizeScale * widthScale, this.size * sizeScale * heightScale);
+      animatedSprite.setOrigin(this.animatedProfile.originX ?? 0.5, this.animatedProfile.originY ?? 0.7);
+      animatedSprite.setFlipX(side === SIDE.AI);
+      this.mainShape = animatedSprite;
+      this.body.add(animatedSprite);
+      this.playUnitAnim("idle", true);
+    } else {
+      const shapeData = this.buildShape(config.id, config.color);
+      this.mainShape = shapeData.main;
+      this.body.add([shapeData.main, ...shapeData.extras]);
+    }
 
     this.statusDots = this.buildStatusDots();
     this.body.add(this.statusDots);
 
-    this.healthBar = scene.add.rectangle(x, y - 30, this.size, 5, 0x2d2f38);
-    this.healthFill = scene.add.rectangle(x, y - 30, this.size, 5, 0x76c27a);
+    this.healthBarOffsetY = Number.isFinite(this.animatedProfile?.healthBarOffsetY)
+      ? this.animatedProfile.healthBarOffsetY
+      : -30;
+    this.healthBar = scene.add.rectangle(x, y + this.healthBarOffsetY, this.size, 5, 0x2d2f38);
+    this.healthFill = scene.add.rectangle(x, y + this.healthBarOffsetY, this.size, 5, 0x76c27a);
+    this.healthBar.setDepth(4);
+    this.healthFill.setDepth(4);
   }
 
   isAlive() {
@@ -72,6 +211,7 @@ class Unit {
     const isStunned = this.status.stun > 0;
     const speed = this.baseSpeed * (this.status.slow > 0 ? this.status.slowPower : 1);
     const buffMult = this.status.buff > 0 ? this.status.buffPower : 1;
+    let action = "idle";
 
     if (!isStunned) {
       if (this.role === "support") {
@@ -80,8 +220,10 @@ class Unit {
           ally.heal(this.healAmount * buffMult);
           this.attackCooldown = this.attackRate;
           this.flash(0xc9f5c7);
+          action = "attack";
         } else if (!ally) {
           this.move(speed, delta, enemyCastle.x);
+          action = "run";
         }
       } else {
         const target = this.findTarget(enemies);
@@ -93,18 +235,23 @@ class Unit {
             }
             this.attackCooldown = this.attackRate;
             this.flash(0xffffff);
+            action = "attack";
           }
         } else if (this.inCastleRange(enemyCastle.x)) {
           if (this.attackCooldown === 0) {
             enemyCastle.takeDamage(this.dmg * buffMult);
             this.attackCooldown = this.attackRate;
             this.flash(0xffe6a8);
+            action = "attack";
           }
         } else {
           this.move(speed, delta, enemyCastle.x);
+          action = "run";
         }
       }
     }
+
+    this.playUnitAnim(action);
 
     this.syncBars();
   }
@@ -154,8 +301,37 @@ class Unit {
   }
 
   takeDamage(amount) {
+    if (!this.isAlive()) return;
+
     this.hp = Math.max(0, this.hp - amount);
     this.flash(0xffc2c2);
+
+    if (this.hp > 0) {
+      this.playUnitAnim("hit", true);
+      return;
+    }
+
+    this.healthBar.setVisible(false);
+    this.healthFill.setVisible(false);
+
+    if (this.deathStarted) return;
+    this.deathStarted = true;
+
+    const resolved = this.playUnitAnim("death", true);
+    const deathAnim = resolved?.key ? this.scene.anims.get(resolved.key) : null;
+    if (!deathAnim) {
+      this.deathAnimDone = true;
+      this.deathCleanupAt = this.scene.time.now;
+      return;
+    }
+
+    const frameCount = deathAnim.frames?.length || 1;
+    const frameRate = deathAnim.frameRate || 10;
+    const durationMs = deathAnim.duration || Math.round((frameCount / frameRate) * 1000);
+    this.deathCleanupAt = this.scene.time.now + Math.max(120, durationMs + 30);
+    this.mainShape.once(`animationcomplete-${resolved.key}`, () => {
+      this.deathAnimDone = true;
+    });
   }
 
   heal(amount) {
@@ -187,21 +363,76 @@ class Unit {
   }
 
   flash(color) {
-    this.mainShape.setFillStyle(color);
+    if (this.mainShape?.setFillStyle) {
+      this.mainShape.setFillStyle(color);
+    } else if (this.mainShape?.setTintFill) {
+      this.mainShape.setTintFill(color);
+    }
     this.scene.time.delayedCall(100, () => {
       if (!this.isAlive()) return;
-      this.mainShape.setFillStyle(this.baseColor);
+      if (this.mainShape?.setFillStyle) {
+        this.mainShape.setFillStyle(this.baseColor);
+      } else if (this.mainShape?.clearTint) {
+        this.mainShape.clearTint();
+      }
     });
+  }
+
+  resolveAnimatedProfile(unitId) {
+    const profile = UNIT_ANIMATION_PROFILES[unitId];
+    if (!profile?.textureKey) return null;
+    if (!this.scene.textures.exists(profile.textureKey)) return null;
+    return profile;
+  }
+
+  resolveUnitAnimAction(action) {
+    if (!this.animatedProfile?.actions) return null;
+
+    const fallback = this.animatedProfile.fallback || {};
+    const candidates = [action, ...(fallback[action] || []), "idle"];
+    const visited = new Set();
+
+    for (const candidate of candidates) {
+      if (!candidate || visited.has(candidate)) continue;
+      visited.add(candidate);
+      const animDef = this.animatedProfile.actions[candidate];
+      if (!animDef?.key) continue;
+      if (this.scene.anims.exists(animDef.key)) {
+        return { action: candidate, key: animDef.key, lock: animDef.lock === true };
+      }
+    }
+
+    return null;
+  }
+
+  playUnitAnim(action, force = false) {
+    if (!this.animatedProfile || !this.mainShape?.anims) return null;
+    if (this.unitAnimLocked && !force && action !== "death") return null;
+
+    const resolved = this.resolveUnitAnimAction(action);
+    if (!resolved?.key) return null;
+
+    if (!force && this.currentUnitAnim === resolved.key) return resolved;
+
+    if (resolved.lock) this.unitAnimLocked = true;
+
+    this.currentUnitAnim = resolved.key;
+    this.mainShape.play(resolved.key, !force);
+    return resolved;
+  }
+
+  isReadyForCleanup() {
+    if (this.isAlive()) return false;
+    if (!this.deathStarted) return true;
+    if (this.deathAnimDone) return true;
+    return this.scene.time.now >= this.deathCleanupAt;
   }
 
   syncBars() {
     this.healthBar.x = this.body.x;
     this.healthFill.x = this.body.x;
-    this.healthBar.y = this.body.y - 30;
-    this.healthFill.y = this.body.y - 30;
-
-    this.roleBadge.x = 0;
-    this.roleBadge.y = -this.size * 0.65;
+    this.healthBar.y = this.body.y + this.healthBarOffsetY;
+    this.healthFill.y = this.body.y + this.healthBarOffsetY;
 
     this.statusDots.x = 0;
     this.statusDots.y = -this.size * 0.85;
@@ -281,28 +512,85 @@ class Unit {
 }
 
 class Turret {
-  constructor(scene, side, x, y) {
+  constructor(scene, side, x, y, metrics = {}) {
     this.scene = scene;
     this.side = side;
     this.x = x;
     this.y = y;
-    this.maxHp = 260;
-    this.hp = 260;
-    this.range = 160;
-    this.dmg = 14;
-    this.attackRate = 0.9;
+    this.maxHp = 520;
+    this.hp = 520;
+    this.range = 190;
+    this.dmg = 22;
+    this.attackRate = 0.72;
     this.attackCooldown = 0;
     this.status = { stun: 0 };
+    this.earlyWaveShieldWaves = 2;
+    this.earlyWaveDamageMult = 0.35;
+    this.earlyWaveMinHpRatio = 0.35;
+    this.base = null;
+    this.baseIsSprite = false;
 
     this.body = scene.add.container(x, y);
-    const base = scene.add.rectangle(0, 0, 36, 26, side === SIDE.PLAYER ? 0x5a6b7a : 0x7a5a5a).setStrokeStyle(2, 0x1c1f27, 1);
-    const tower = scene.add.rectangle(0, -16, 24, 22, 0x2b303b).setStrokeStyle(2, 0x1c1f27, 1);
-    const head = scene.add.triangle(0, -30, -8, 6, 8, 6, 0, -6, 0xe2d2b3).setStrokeStyle(1, 0x1c1f27, 1);
-    this.body.add([base, tower, head]);
-    this.base = base;
+    this.body.setDepth(3);
+    const hasTurretBase = scene.textures.exists("turret_base");
+    const turretHeadKey = scene.textures.exists("turret_head_keyed")
+      ? "turret_head_keyed"
+      : scene.textures.exists("turret_head")
+      ? "turret_head"
+      : null;
+    const hasTurretHead = Boolean(turretHeadKey);
+    const showBase = metrics.showBase === true;
+    const baseWidth = metrics.baseWidth || 44;
+    const baseHeight = metrics.baseHeight || 34;
+    const headWidth = metrics.headWidth || 28;
+    const headHeight = metrics.headHeight || 28;
 
-    this.healthBar = scene.add.rectangle(x, y - 28, 44, 5, 0x2d2f38);
-    this.healthFill = scene.add.rectangle(x, y - 28, 44, 5, 0x9ec9f0);
+    if (showBase && hasTurretBase) {
+      const base = scene.add.image(0, 0, "turret_base").setDisplaySize(baseWidth, baseHeight);
+      const teamTint = side === SIDE.PLAYER ? 0xb5cee6 : 0xe1bbbb;
+      base.setTint(teamTint);
+      this.body.add(base);
+      this.base = base;
+      this.baseIsSprite = true;
+      this.baseTeamTint = teamTint;
+    } else if (showBase) {
+      const base = scene
+        .add.rectangle(0, 0, 36, 26, side === SIDE.PLAYER ? 0x5a6b7a : 0x7a5a5a)
+        .setStrokeStyle(2, 0x1c1f27, 1);
+      const tower = scene.add.rectangle(0, -16, 24, 22, 0x2b303b).setStrokeStyle(2, 0x1c1f27, 1);
+      this.body.add([base, tower]);
+      this.base = base;
+      this.baseIsSprite = false;
+    }
+
+    const headY = showBase ? -24 : -headHeight * 0.5;
+    if (hasTurretHead) {
+      const head = scene.add.image(0, headY, turretHeadKey).setDisplaySize(headWidth, headHeight);
+      head.setFlipX(side === SIDE.AI);
+      this.body.add(head);
+    } else {
+      const head = scene
+        .add.triangle(0, headY - 6, -8, 6, 8, 6, 0, -6, 0xe2d2b3)
+        .setStrokeStyle(1, 0x1c1f27, 1);
+      this.body.add(head);
+    }
+
+    const healthBarWidth = metrics.hpWidth || 44;
+    const healthBarHeight = metrics.hpHeight || 5;
+    const turretTopY = Math.min(showBase ? -baseHeight * 0.5 : Number.POSITIVE_INFINITY, headY - headHeight * 0.5);
+    this.healthBarOffsetX = metrics.hpOffsetX || 0;
+    this.healthBarOffsetY = Number.isFinite(metrics.hpOffsetY) ? metrics.hpOffsetY : turretTopY - healthBarHeight * 1.4;
+
+    this.healthBar = scene.add.rectangle(x + this.healthBarOffsetX, y + this.healthBarOffsetY, healthBarWidth, healthBarHeight, 0x2d2f38);
+    this.healthFill = scene.add.rectangle(
+      x + this.healthBarOffsetX,
+      y + this.healthBarOffsetY,
+      healthBarWidth,
+      Math.max(2, healthBarHeight - 1),
+      0x9ec9f0
+    );
+    this.healthBar.setDepth(4);
+    this.healthFill.setDepth(4);
   }
 
   isAlive() {
@@ -352,7 +640,14 @@ class Turret {
   }
 
   takeDamage(amount) {
-    this.hp = Math.max(0, this.hp - amount);
+    const waveNumber = this.scene.waveNumber || 0;
+    if (waveNumber <= this.earlyWaveShieldWaves) {
+      const reduced = amount * this.earlyWaveDamageMult;
+      const minHp = this.maxHp * this.earlyWaveMinHpRatio;
+      this.hp = Math.max(minHp, this.hp - reduced);
+    } else {
+      this.hp = Math.max(0, this.hp - amount);
+    }
     this.flash(0xffc2c2);
     if (!this.isAlive()) {
       this.scene.events.emit("log", { type: "turret", side: this.side });
@@ -367,18 +662,27 @@ class Turret {
   }
 
   flash(color) {
-    this.base.setFillStyle(color);
+    if (!this.base) return;
+    if (this.baseIsSprite) {
+      this.base.setTintFill(color);
+    } else {
+      this.base.setFillStyle(color);
+    }
     this.scene.time.delayedCall(100, () => {
       if (!this.isAlive()) return;
-      this.base.setFillStyle(this.side === SIDE.PLAYER ? 0x5a6b7a : 0x7a5a5a);
+      if (this.baseIsSprite) {
+        this.base.setTint(this.baseTeamTint);
+      } else {
+        this.base.setFillStyle(this.side === SIDE.PLAYER ? 0x5a6b7a : 0x7a5a5a);
+      }
     });
   }
 
   syncBars() {
-    this.healthBar.x = this.x;
-    this.healthFill.x = this.x;
-    this.healthBar.y = this.y - 28;
-    this.healthFill.y = this.y - 28;
+    this.healthBar.x = this.x + this.healthBarOffsetX;
+    this.healthFill.x = this.x + this.healthBarOffsetX;
+    this.healthBar.y = this.y + this.healthBarOffsetY;
+    this.healthFill.y = this.y + this.healthBarOffsetY;
     const ratio = this.hp / this.maxHp;
     this.healthFill.width = this.healthBar.width * ratio;
     this.healthFill.x = this.healthBar.x - (this.healthBar.width - this.healthFill.width) / 2;
@@ -397,6 +701,9 @@ export default class GameScene extends Phaser.Scene {
   }
 
   create() {
+    this.castleVariants = CASTLE_VARIANTS;
+    this.castleVariantIndex = 2;
+
     this.width = this.scale.width;
     this.height = this.scale.height;
     this.uiLeft = 0;
@@ -409,6 +716,11 @@ export default class GameScene extends Phaser.Scene {
       height: this.height - this.uiTop - this.uiBottom
     };
 
+    this.layoutProfile = createDefaultLayoutProfile(this.playArea);
+    this.loadLayoutProfile();
+    this.computeBoardLayout();
+
+    this.bridgeVisuals = [];
     this.createBackground();
     this.createBridge();
     this.createCastles();
@@ -418,6 +730,15 @@ export default class GameScene extends Phaser.Scene {
     this.aiUnits = [];
     this.playerTurrets = [this.playerTurret];
     this.aiTurrets = [this.aiTurret];
+
+    this.registerLayoutDevHotkeys();
+    this.createLayoutDevPanel();
+    this.registerUnitDevHotkeys();
+    this.createUnitDevPanel();
+    this.events.once("shutdown", () => {
+      this.destroyLayoutDevPanel();
+      this.destroyUnitDevPanel();
+    });
 
     this.isGameOver = false;
     this.lastCastleHitLog = { player: 0, ai: 0 };
@@ -435,8 +756,8 @@ export default class GameScene extends Phaser.Scene {
     this.interestCap = 12;
     this.interestTick = 1;
 
-    this.playerResources = 6;
-    this.aiResources = 6;
+    this.playerResources = 20;
+    this.aiResources = 20;
 
     this.abilityCooldowns = {
       healWave: 0,
@@ -444,7 +765,7 @@ export default class GameScene extends Phaser.Scene {
     };
 
     this.matchTime = 0;
-    this.waveLockSeconds = 6;
+    this.waveLockSeconds = 5;
     this.waveSupply = 12;
     this.waveSize = this.waveSupply;
     this.waveSlots = { front: 4, mid: 4, rear: 4 };
@@ -485,6 +806,7 @@ export default class GameScene extends Phaser.Scene {
     this.events.on("spawn-request", (type) => this.requestSpawn(type));
     this.events.on("queue-add", (payload) => this.queueUnit(payload, SIDE.PLAYER));
     this.events.on("queue-remove", (payload) => this.removeQueuedUnit(payload, SIDE.PLAYER));
+    this.events.on("queue-move", (payload) => this.moveQueuedUnit(payload, SIDE.PLAYER));
     this.events.on("shop-reroll", () => this.requestShopReroll(SIDE.PLAYER));
     this.events.on("stance-select", (payload) => this.selectStance(payload, SIDE.PLAYER));
     this.events.on("ability-request", (id) => this.requestAbility(id));
@@ -492,8 +814,270 @@ export default class GameScene extends Phaser.Scene {
     this.emitUiState();
   }
 
+  resolveInitialCastleVariantIndex() {
+    const max = CASTLE_VARIANTS.length;
+    if (typeof window !== "undefined") {
+      try {
+        const query = new URLSearchParams(window.location.search).get("castleVariant");
+        const numeric = Number(query);
+        if (!Number.isNaN(numeric) && numeric >= 1 && numeric <= max) {
+          return numeric - 1;
+        }
+      } catch {
+        // ignore invalid query
+      }
+
+      try {
+        const stored = Number(window.localStorage.getItem("castleVariantIndex"));
+        if (!Number.isNaN(stored) && stored >= 0 && stored < max) {
+          return stored;
+        }
+      } catch {
+        // ignore storage issues
+      }
+    }
+    return 0;
+  }
+
+  getCastleVariant() {
+    const variant = this.castleVariants[this.castleVariantIndex] || this.castleVariants[0];
+    const hasVariantBase = variant && this.textures.exists(variant.baseKey);
+    const hasVariantTower = variant && this.textures.exists(variant.towerKey);
+    return {
+      label: hasVariantBase ? variant.label : "Legacy",
+      baseKey: hasVariantBase ? variant.baseKey : "castle_base_player",
+      towerKey: hasVariantTower ? variant.towerKey : "castle_tower",
+      useTwinMirror: hasVariantBase
+    };
+  }
+
+  createCastleVariantIndicator() {
+    const variant = this.getCastleVariant();
+    this.castleVariantText = this.add
+      .text(this.width / 2, this.uiTop + 6, `Castle: ${variant.label}  [ / ]`, {
+        fontFamily: "Alegreya Sans",
+        fontSize: "12px",
+        color: "#d9d1bf"
+      })
+      .setOrigin(0.5, 0)
+      .setDepth(30)
+      .setAlpha(0.85);
+  }
+
+  registerCastleVariantHotkeys() {
+    if (!this.input?.keyboard) return;
+    this.input.keyboard.on("keydown-OPEN_BRACKET", () => this.cycleCastleVariant(-1));
+    this.input.keyboard.on("keydown-CLOSE_BRACKET", () => this.cycleCastleVariant(1));
+  }
+
+  cycleCastleVariant(delta) {
+    if (!this.castleVariants || this.castleVariants.length === 0) return;
+    const len = this.castleVariants.length;
+    this.castleVariantIndex = (this.castleVariantIndex + delta + len) % len;
+    if (typeof window !== "undefined") {
+      try {
+        window.localStorage.setItem("castleVariantIndex", `${this.castleVariantIndex}`);
+      } catch {
+        // ignore storage issues
+      }
+    }
+    this.scene.restart();
+  }
+
+  registerUnitDevHotkeys() {
+    if (!this.input?.keyboard) return;
+    const units = Object.values(UNIT_TYPES)
+      .sort((a, b) => (a.tier || 0) - (b.tier || 0) || (a.cost || 0) - (b.cost || 0) || a.name.localeCompare(b.name))
+      .map((unit) => unit.id);
+    this.unitDev = {
+      enabled: false,
+      selectedUnitId: units.includes("breaker") ? "breaker" : units[0] || null,
+      selectedSide: SIDE.PLAYER,
+      spawnCount: 1,
+      unitIds: units
+    };
+    this.unitDevToggleKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.U);
+    this.unitDevKeys = {
+      enter: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER),
+      left: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.LEFT),
+      right: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT),
+      p: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P),
+      o: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.O)
+    };
+  }
+
+  isTypingInInput() {
+    if (typeof document === "undefined") return false;
+    const active = document.activeElement;
+    if (!active) return false;
+    const tag = (active.tagName || "").toLowerCase();
+    return tag === "input" || tag === "select" || tag === "textarea";
+  }
+
+  handleUnitDevInput() {
+    if (!this.unitDev) return;
+    if (this.unitDevToggleKey && Phaser.Input.Keyboard.JustDown(this.unitDevToggleKey)) {
+      this.toggleUnitDev();
+    }
+    if (!this.unitDev.enabled || !this.input?.keyboard || this.isTypingInInput()) return;
+
+    if (this.unitDevKeys.left && Phaser.Input.Keyboard.JustDown(this.unitDevKeys.left)) {
+      this.cycleUnitDevSelection(-1);
+    }
+    if (this.unitDevKeys.right && Phaser.Input.Keyboard.JustDown(this.unitDevKeys.right)) {
+      this.cycleUnitDevSelection(1);
+    }
+    if (this.unitDevKeys.p && Phaser.Input.Keyboard.JustDown(this.unitDevKeys.p)) {
+      this.unitDev.selectedSide = SIDE.PLAYER;
+      this.syncUnitDevPanel();
+    }
+    if (this.unitDevKeys.o && Phaser.Input.Keyboard.JustDown(this.unitDevKeys.o)) {
+      this.unitDev.selectedSide = SIDE.AI;
+      this.syncUnitDevPanel();
+    }
+    if (this.unitDevKeys.enter && Phaser.Input.Keyboard.JustDown(this.unitDevKeys.enter)) {
+      this.handleUnitDevSpawn();
+    }
+  }
+
+  toggleUnitDev() {
+    if (!this.unitDev) return;
+    this.unitDev.enabled = !this.unitDev.enabled;
+    this.syncUnitDevPanel();
+  }
+
+  cycleUnitDevSelection(step) {
+    if (!this.unitDev?.unitIds?.length) return;
+    const list = this.unitDev.unitIds;
+    const current = Math.max(0, list.indexOf(this.unitDev.selectedUnitId));
+    const next = (current + step + list.length) % list.length;
+    this.unitDev.selectedUnitId = list[next];
+    this.syncUnitDevPanel();
+  }
+
+  handleUnitDevSpawn(side = this.unitDev?.selectedSide) {
+    if (!this.unitDev?.selectedUnitId) return;
+    this.spawnDevUnits(this.unitDev.selectedUnitId, side || SIDE.PLAYER, this.unitDev.spawnCount || 1);
+  }
+
+  createUnitDevPanel() {
+    if (typeof document === "undefined") return;
+    const panel = document.createElement("div");
+    panel.id = "unit-dev-panel";
+    panel.style.position = "fixed";
+    panel.style.right = "16px";
+    panel.style.top = "336px";
+    panel.style.width = "300px";
+    panel.style.padding = "10px";
+    panel.style.background = "rgba(13, 17, 24, 0.9)";
+    panel.style.border = "1px solid rgba(177, 198, 240, 0.35)";
+    panel.style.borderRadius = "8px";
+    panel.style.color = "#e8edf7";
+    panel.style.font = "12px/1.4 monospace";
+    panel.style.zIndex = "9999";
+    panel.style.display = "none";
+
+    panel.innerHTML = `
+      <div style="margin-bottom:6px; font-weight:700;">Unit Dev Spawn</div>
+      <div style="margin-bottom:8px; opacity:0.85;">Toggle: U. Enter spawn. <-/-> cycle unit. P player, O enemy.</div>
+      <div style="display:grid; gap:8px; margin-bottom:8px;">
+        <label style="display:grid; gap:4px;">
+          <span>Unit</span>
+          <select data-unitdev-unit style="padding:4px;"></select>
+        </label>
+        <label style="display:grid; gap:4px;">
+          <span>Side</span>
+          <select data-unitdev-side style="padding:4px;">
+            <option value="player">Player</option>
+            <option value="ai">AI</option>
+          </select>
+        </label>
+        <label style="display:grid; gap:4px;">
+          <span>Count</span>
+          <input data-unitdev-count type="number" min="1" max="24" step="1" value="1" style="padding:4px;" />
+        </label>
+      </div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
+        <button data-unitdev-spawn type="button">Spawn</button>
+        <button data-unitdev-spawn-player type="button">Spawn Player</button>
+        <button data-unitdev-spawn-ai type="button">Spawn AI</button>
+      </div>
+      <div data-unitdev-info style="min-height:18px; opacity:0.9;"></div>
+    `;
+    document.body.appendChild(panel);
+
+    const unitSelect = panel.querySelector("[data-unitdev-unit]");
+    const sideSelect = panel.querySelector("[data-unitdev-side]");
+    const countInput = panel.querySelector("[data-unitdev-count]");
+    const spawnBtn = panel.querySelector("[data-unitdev-spawn]");
+    const spawnPlayerBtn = panel.querySelector("[data-unitdev-spawn-player]");
+    const spawnAiBtn = panel.querySelector("[data-unitdev-spawn-ai]");
+
+    const unitIds = this.unitDev?.unitIds || [];
+    unitIds.forEach((id) => {
+      const unit = UNIT_TYPES[id];
+      if (!unit || !unitSelect) return;
+      const option = document.createElement("option");
+      option.value = id;
+      option.textContent = `${unit.name} (${id})`;
+      unitSelect.appendChild(option);
+    });
+
+    unitSelect?.addEventListener("change", (event) => {
+      this.unitDev.selectedUnitId = event.target?.value || this.unitDev.selectedUnitId;
+      this.syncUnitDevPanel();
+    });
+    sideSelect?.addEventListener("change", (event) => {
+      const value = event.target?.value;
+      this.unitDev.selectedSide = value === SIDE.AI ? SIDE.AI : SIDE.PLAYER;
+      this.syncUnitDevPanel();
+    });
+    countInput?.addEventListener("change", (event) => {
+      this.unitDev.spawnCount = Phaser.Math.Clamp(Number(event.target?.value) || 1, 1, 24);
+      this.syncUnitDevPanel();
+    });
+    spawnBtn?.addEventListener("click", () => this.handleUnitDevSpawn());
+    spawnPlayerBtn?.addEventListener("click", () => this.handleUnitDevSpawn(SIDE.PLAYER));
+    spawnAiBtn?.addEventListener("click", () => this.handleUnitDevSpawn(SIDE.AI));
+
+    this.unitDevPanel = panel;
+    this.syncUnitDevPanel();
+  }
+
+  destroyUnitDevPanel() {
+    if (this.unitDevPanel?.parentElement) {
+      this.unitDevPanel.parentElement.removeChild(this.unitDevPanel);
+    }
+    this.unitDevPanel = null;
+  }
+
+  syncUnitDevPanel() {
+    if (!this.unitDevPanel || !this.unitDev) return;
+    this.unitDevPanel.style.display = this.unitDev.enabled ? "block" : "none";
+
+    const unitSelect = this.unitDevPanel.querySelector("[data-unitdev-unit]");
+    const sideSelect = this.unitDevPanel.querySelector("[data-unitdev-side]");
+    const countInput = this.unitDevPanel.querySelector("[data-unitdev-count]");
+    const info = this.unitDevPanel.querySelector("[data-unitdev-info]");
+
+    if (unitSelect) unitSelect.value = this.unitDev.selectedUnitId || "";
+    if (sideSelect) sideSelect.value = this.unitDev.selectedSide || SIDE.PLAYER;
+    if (countInput) countInput.value = `${this.unitDev.spawnCount || 1}`;
+    if (info) {
+      const unitName = UNIT_TYPES[this.unitDev.selectedUnitId]?.name || this.unitDev.selectedUnitId || "none";
+      info.textContent = `Spawning ${this.unitDev.spawnCount}x ${unitName} for ${this.unitDev.selectedSide}`;
+    }
+  }
+
   update(_, deltaMs) {
     const delta = deltaMs / 1000;
+
+    this.handleLayoutDevInput();
+    this.handleUnitDevInput();
+    if (this.layoutDev?.enabled) {
+      this.emitUiState();
+      return;
+    }
 
     if (this.isGameOver) return;
 
@@ -517,7 +1101,7 @@ export default class GameScene extends Phaser.Scene {
       this.rollShopOffers(SIDE.AI, true);
       this.waveCountdown += this.getWaveInterval(this.matchTime);
     }
-    this.waveLocked = this.waveCountdown <= this.waveLockSeconds;
+    this.waveLocked = false;
 
     const playerUnitEnemies = [...this.aiUnits, ...this.aiTurrets.filter((t) => t && t.isAlive())];
     const aiUnitEnemies = [...this.playerUnits, ...this.playerTurrets.filter((t) => t && t.isAlive())];
@@ -552,108 +1136,125 @@ export default class GameScene extends Phaser.Scene {
 
     this.checkGameOver();
 
+    this.updateCastleHud();
+
     this.emitUiState();
   }
 
   createBackground() {
-    this.add.rectangle(this.width / 2, this.height / 2, this.width, this.height, 0x151922);
-    const far = this.add.rectangle(this.width / 2, this.height * 0.35, this.width, this.height * 0.6, 0x273145);
-    const mid = this.add.rectangle(this.width / 2, this.height * 0.52, this.width, this.height * 0.6, 0x1f2a3b);
-    const near = this.add.rectangle(this.width / 2, this.height * 0.72, this.width, this.height * 0.6, 0x202733);
+    const hasBgSky = this.textures.exists("bg_sky");
 
-    const cliffs = this.add.graphics();
-    cliffs.fillStyle(0x2e3a4b, 1);
-    cliffs.beginPath();
-    cliffs.moveTo(0, this.height * 0.25);
-    cliffs.lineTo(160, this.height * 0.3);
-    cliffs.lineTo(190, this.height * 0.55);
-    cliffs.lineTo(0, this.height * 0.62);
-    cliffs.closePath();
-    cliffs.fillPath();
+    this.add.rectangle(this.width / 2, this.height / 2, this.width, this.height, 0x151922).setDepth(-20);
 
-    cliffs.fillStyle(0x3a4658, 1);
-    cliffs.beginPath();
-    cliffs.moveTo(this.width, this.height * 0.25);
-    cliffs.lineTo(this.width - 160, this.height * 0.3);
-    cliffs.lineTo(this.width - 190, this.height * 0.55);
-    cliffs.lineTo(this.width, this.height * 0.62);
-    cliffs.closePath();
-    cliffs.fillPath();
+    const sky = hasBgSky
+      ? this.add.image(this.width / 2, this.height / 2, "bg_sky")
+      : this.add.rectangle(this.width / 2, this.height / 2, this.width, this.height, 0x273145);
+    if (hasBgSky) {
+      const frame = this.textures.get("bg_sky").getSourceImage();
+      const scale = Math.max((this.width + 8) / frame.width, (this.height + 8) / frame.height);
+      sky.setScale(scale);
+    }
+    sky.setDepth(-18);
 
-    const haze = this.add.rectangle(this.width / 2, this.height * 0.4, this.width, this.height * 0.3, 0x1c2330, 0.35);
-    const vignette = this.add.rectangle(this.width / 2, this.height / 2, this.width, this.height, 0x0d1016, 0.15);
+    const vignette = this.add.rectangle(this.width / 2, this.height / 2, this.width, this.height, 0x0d1016, 0.15).setDepth(4);
     vignette.setBlendMode(Phaser.BlendModes.MULTIPLY);
-
-    this.tweens.add({
-      targets: [far, mid, haze],
-      x: "+=12",
-      duration: 7000,
-      yoyo: true,
-      repeat: -1,
-      ease: "Sine.easeInOut"
-    });
-    this.tweens.add({
-      targets: [near],
-      x: "-=16",
-      duration: 8000,
-      yoyo: true,
-      repeat: -1,
-      ease: "Sine.easeInOut"
-    });
   }
 
   createBridge() {
-    const bridgeY = this.playArea.y + this.playArea.height * 0.62;
-    this.bridgeY = bridgeY;
+    this.clearBridgeVisuals();
+    const bridgeY = this.controlY;
+    const bridgeThickness = this.bridgeThickness;
+    const bridgePlankY = this.bridgePlankY;
+    const ropeTopY = this.bridgeRopeTopY;
+    const ropeBottomY = this.bridgeRopeBottomY;
 
-    const platformLength = 140;
-    const platformHeight = 56;
-    const bridgeMargin = 60;
-
-    this.platformLeftStart = this.playArea.x + bridgeMargin;
-    this.platformLeftEnd = this.platformLeftStart + platformLength;
-    this.platformRightEnd = this.playArea.x + this.playArea.width - bridgeMargin;
-    this.platformRightStart = this.platformRightEnd - platformLength;
-
-    this.bridgeLeft = this.platformLeftEnd;
-    this.bridgeRight = this.platformRightStart;
+    this.platformLeftStart = this.boardLayout.leftSpawnStart;
+    this.platformLeftEnd = this.boardLayout.leftSpawnEnd;
+    this.platformRightStart = this.boardLayout.rightSpawnStart;
+    this.platformRightEnd = this.boardLayout.rightSpawnEnd;
+    this.bridgeLeft = this.boardLayout.bridgeLeft;
+    this.bridgeRight = this.boardLayout.bridgeRight;
     const bridgeWidth = this.bridgeRight - this.bridgeLeft;
     const bridgeCenter = this.playArea.x + this.playArea.width / 2;
 
-    const platformLeft = this.add.rectangle((this.platformLeftStart + this.platformLeftEnd) / 2, bridgeY, platformLength, platformHeight, 0x3a3430);
-    platformLeft.setStrokeStyle(2, 0x241b18, 1);
-    const platformRight = this.add.rectangle((this.platformRightStart + this.platformRightEnd) / 2, bridgeY, platformLength, platformHeight, 0x3a3430);
-    platformRight.setStrokeStyle(2, 0x241b18, 1);
+    const hasPlatform = this.textures.exists("platform_stone");
+    const hasBridgePlank = this.textures.exists("bridge_plank");
+    const hasBridgePillar = this.textures.exists("bridge_pillar");
+    const hasBridgeRope = this.textures.exists("bridge_rope");
 
-    const deck = this.add.rectangle(bridgeCenter, bridgeY, bridgeWidth, 42, 0x3c312c).setStrokeStyle(2, 0x241b18, 1);
-    const railTop = this.add.rectangle(bridgeCenter, bridgeY - 20, bridgeWidth - 16, 6, 0x2a211e);
-    const railBottom = this.add.rectangle(bridgeCenter, bridgeY + 20, bridgeWidth - 16, 6, 0x2a211e);
+    this.drawDeckSegment(this.boardLayout.leftFoundationStart, this.boardLayout.leftFoundationEnd, this.foundationDeckY, this.foundationDeckHeight, 1, hasPlatform);
+    this.drawDeckSegment(this.boardLayout.rightFoundationStart, this.boardLayout.rightFoundationEnd, this.foundationDeckY, this.foundationDeckHeight, 1, hasPlatform);
+    this.drawDeckSegment(this.platformLeftStart, this.platformLeftEnd, this.spawnDeckY, this.spawnDeckHeight, 2, hasPlatform);
+    this.drawDeckSegment(this.platformRightStart, this.platformRightEnd, this.spawnDeckY, this.spawnDeckHeight, 2, hasPlatform);
 
-    for (let x = this.bridgeLeft + 20; x <= this.bridgeRight - 20; x += 90) {
-      this.add.rectangle(x, bridgeY, 10, 38, 0x2d2522);
+    if (hasBridgePlank) {
+      const segmentCount = 6;
+      const segmentWidth = bridgeWidth / segmentCount;
+      for (let i = 0; i < segmentCount; i += 1) {
+        const x = this.bridgeLeft + segmentWidth * (i + 0.5);
+        this.addBridgeVisual(this.add.image(x, bridgePlankY, "bridge_plank").setDisplaySize(segmentWidth + 2, bridgeThickness).setDepth(2));
+      }
+    } else {
+      this.addBridgeVisual(this.add.rectangle(bridgeCenter, bridgePlankY, bridgeWidth, bridgeThickness - 6, 0x3c312c).setStrokeStyle(2, 0x241b18, 1).setDepth(2));
+      this.addBridgeVisual(this.add.rectangle(bridgeCenter, bridgePlankY - bridgeThickness * 0.4, bridgeWidth - 16, 6, 0x2a211e).setDepth(2));
+      this.addBridgeVisual(this.add.rectangle(bridgeCenter, bridgePlankY + bridgeThickness * 0.4, bridgeWidth - 16, 6, 0x2a211e).setDepth(2));
     }
 
-    const rope = this.add.graphics();
-    rope.lineStyle(3, 0x1b1f27, 0.9);
-    this.drawRope(rope, this.bridgeLeft, this.bridgeRight, bridgeY - 26, 10);
-    this.drawRope(rope, this.bridgeLeft, this.bridgeRight, bridgeY + 26, 10);
+    if (this.bridgeShowPillars) {
+      for (let x = this.bridgeLeft + 20; x <= this.bridgeRight - 20; x += this.bridgePillarStep) {
+        if (hasBridgePillar) {
+          this.addBridgeVisual(this.add.image(x, this.bridgePillarY, "bridge_pillar").setDisplaySize(18, this.bridgePillarHeight).setDepth(2));
+        } else {
+          this.addBridgeVisual(this.add.rectangle(x, this.bridgePillarY, 10, this.bridgePillarHeight - 4, 0x2d2522).setDepth(2));
+        }
+      }
+    }
+
+    if (this.bridgeShowRopes) {
+      if (hasBridgeRope) {
+        this.addBridgeVisual(this.add.tileSprite(bridgeCenter, ropeTopY, bridgeWidth, 12, "bridge_rope").setDepth(3).setAlpha(0.9));
+        this.addBridgeVisual(this.add.tileSprite(bridgeCenter, ropeBottomY, bridgeWidth, 12, "bridge_rope").setDepth(3).setAlpha(0.9));
+      } else {
+        const rope = this.addBridgeVisual(this.add.graphics().setDepth(3));
+        rope.lineStyle(3, 0x1b1f27, 0.9);
+        this.drawRope(rope, this.bridgeLeft, this.bridgeRight, ropeTopY - 2, 10);
+        this.drawRope(rope, this.bridgeLeft, this.bridgeRight, ropeBottomY + 2, 10);
+      }
+    }
 
     this.controlPoints = [];
+    const hasControlRune = this.textures.exists("control_rune");
+    const hasControlGlow = this.textures.exists("control_glow");
     const pointCount = 5;
     const spacing = bridgeWidth / (pointCount + 1);
     for (let i = 0; i < pointCount; i += 1) {
       const x = this.bridgeLeft + spacing * (i + 1);
-      const marker = this.add.circle(x, bridgeY, 10, 0x323844, 0.8).setStrokeStyle(2, 0x5b616e, 1);
-      const core = this.add.circle(x, bridgeY, 5, 0x7b8598, 0.9);
+      const glow = this.bridgeShowControlFx && hasControlGlow
+        ? this.addBridgeVisual(this.add.image(x, bridgeY, "control_glow").setDisplaySize(36, 36).setAlpha(0.45).setDepth(3))
+        : null;
+      const rune = this.bridgeShowControlFx && hasControlRune
+        ? this.addBridgeVisual(this.add.image(x, bridgeY, "control_rune").setDisplaySize(26, 26).setAlpha(0.85).setDepth(4))
+        : null;
+      const marker = this.addBridgeVisual(this.add.circle(x, bridgeY, 10, 0x323844, 0.8).setStrokeStyle(2, 0x5b616e, 1));
+      const core = this.addBridgeVisual(this.add.circle(x, bridgeY, 5, 0x7b8598, 0.9));
+      marker.setDepth(4);
+      core.setDepth(5);
       this.controlPoints.push({
         index: i,
         x,
         y: bridgeY,
         owner: "neutral",
         progress: 0,
+        glow,
+        rune,
         marker,
         core,
-        zone: new Phaser.Geom.Rectangle(x - 60, bridgeY - 26, 120, 52)
+        zone: new Phaser.Geom.Rectangle(
+          x - this.controlZoneWidth / 2,
+          bridgeY - this.controlZoneHeight / 2,
+          this.controlZoneWidth,
+          this.controlZoneHeight
+        )
       });
     }
   }
@@ -672,23 +1273,61 @@ export default class GameScene extends Phaser.Scene {
   }
 
   createCastles() {
-    const y = this.bridgeY - 30;
-    this.playerCastle = this.createCastle(this.playArea.x + 42, y, SIDE.PLAYER, 0x5f7685);
-    this.aiCastle = this.createCastle(this.playArea.x + this.playArea.width - 42, y, SIDE.AI, 0x8a5a5a);
+    const y = this.castleAnchorY;
+    this.playerCastle = this.createCastle(this.castleXLeft, y, SIDE.PLAYER, 0x5f7685);
+    this.aiCastle = this.createCastle(this.castleXRight, y, SIDE.AI, 0x8a5a5a);
   }
 
   createTurrets() {
-    const offset = 18;
-    this.playerTurret = new Turret(this, SIDE.PLAYER, this.platformLeftEnd - offset, this.bridgeY - 6);
-    this.aiTurret = new Turret(this, SIDE.AI, this.platformRightStart + offset, this.bridgeY - 6);
+    this.destroyTurrets();
+    const offset = this.turretSideInset;
+    const turretY = this.turretY;
+    this.playerTurret = new Turret(this, SIDE.PLAYER, this.platformLeftEnd - offset, turretY, this.layoutProfile.turret);
+    this.aiTurret = new Turret(this, SIDE.AI, this.platformRightStart + offset, turretY, this.layoutProfile.turret);
+    if (this.playerTurrets) this.playerTurrets = [this.playerTurret];
+    if (this.aiTurrets) this.aiTurrets = [this.aiTurret];
   }
 
   createCastle(x, y, side, color) {
-    const base = this.add.rectangle(x, y, 92, 120, color).setStrokeStyle(3, 0x20242f, 1);
-    const gate = this.add.rectangle(x, y + 22, 36, 48, 0x2a211e).setStrokeStyle(2, 0x161414, 1);
-    const tower = this.add.rectangle(x, y - 62, 64, 42, 0x4a5b6a).setStrokeStyle(3, 0x20242f, 1);
-    const roof = this.add.triangle(x, y - 90, -36, 20, 36, 20, 0, -20, 0x2a2f3a).setStrokeStyle(2, 0x1b1e27, 1);
-    const banner = this.add.rectangle(x, y - 46, 64, 8, 0xe2d2b3, 1);
+    const castleVariant = this.getCastleVariant();
+    const castleKey = castleVariant.useTwinMirror
+      ? castleVariant.baseKey
+      : side === SIDE.PLAYER
+      ? "castle_base_player"
+      : "castle_base_ai";
+    const hasCastleBase = this.textures.exists(castleKey);
+
+    let base;
+    if (hasCastleBase) {
+      base = this.add
+        .image(x, y + this.castleBaseCenterYOffset, castleKey)
+        .setDisplaySize(this.castleBaseWidth, this.castleBaseHeight)
+        .setDepth(6);
+      base.setFlipX(side === SIDE.PLAYER);
+    } else {
+      base = this.add.rectangle(x, y, 92, 120, color).setStrokeStyle(3, 0x20242f, 1).setDepth(6);
+      this.add.rectangle(x, y + 22, 36, 48, 0x2a211e).setStrokeStyle(2, 0x161414, 1).setDepth(7);
+      this.add.triangle(x, y - 90, -36, 20, 36, 20, 0, -20, 0x2a2f3a).setStrokeStyle(2, 0x1b1e27, 1).setDepth(7);
+    }
+
+    const hpBarWidth = this.castleHpBarWidth;
+    const hpBarHeight = this.castleHpBarHeight;
+    const hpBarX = x + (side === SIDE.PLAYER ? this.castleHpOffsetX : -this.castleHpOffsetX);
+    const hpBarY = y + this.castleHpOffsetY;
+    const hpFramePadding = 2;
+    const hpBarFrame = this.add
+      .rectangle(hpBarX, hpBarY, hpBarWidth + hpFramePadding * 2, hpBarHeight + hpFramePadding * 2, 0x10151f, 0.92)
+      .setStrokeStyle(1, 0xe4d6b8, 0.9)
+      .setDepth(9);
+    const hpBarBack = this.add.rectangle(hpBarX, hpBarY, hpBarWidth, hpBarHeight, 0x252d3a, 1).setDepth(10);
+    const hpBarFill = this.add
+      .rectangle(hpBarX - hpBarWidth * 0.5, hpBarY, hpBarWidth, hpBarHeight - 4, 0x79d27e)
+      .setOrigin(0, 0.5)
+      .setDepth(11);
+
+    const baseTeamTint = side === SIDE.PLAYER ? 0xb5cee6 : 0xe1bbbb;
+    if (hasCastleBase) base.setTint(baseTeamTint);
+
     return {
       side,
       x,
@@ -696,12 +1335,24 @@ export default class GameScene extends Phaser.Scene {
       maxHp: 900,
       hp: 900,
       base,
-      banner,
+      baseIsSprite: hasCastleBase,
+      baseTeamTint,
+      tower: null,
+      banner: null,
+      hpBarFrame,
+      hpBarBack,
+      hpBarFill,
+      hpBarWidth,
       takeDamage: (amount) => {
         const castle = side === SIDE.PLAYER ? this.playerCastle : this.aiCastle;
         castle.hp = Math.max(0, castle.hp - amount);
-        base.setFillStyle(0xffe0a3);
-        this.time.delayedCall(120, () => base.setFillStyle(color));
+        if (castle.baseIsSprite) {
+          base.setTintFill(0xffe0a3);
+          this.time.delayedCall(120, () => base.setTint(castle.baseTeamTint));
+        } else {
+          base.setFillStyle(0xffe0a3);
+          this.time.delayedCall(120, () => base.setFillStyle(color));
+        }
         this.cameras.main.shake(80, 0.004);
 
         const key = side === SIDE.PLAYER ? "player" : "ai";
@@ -714,8 +1365,41 @@ export default class GameScene extends Phaser.Scene {
     };
   }
 
+  updateCastleHud() {
+    const syncCastleBar = (castle) => {
+      if (!castle?.hpBarFill || !castle.hpBarWidth) return;
+      const ratio = Phaser.Math.Clamp(castle.hp / castle.maxHp, 0, 1);
+      castle.hpBarFill.width = castle.hpBarWidth * ratio;
+      const fillColor = ratio > 0.65 ? 0x79d27e : ratio > 0.35 ? 0xf0be64 : 0xd96c6c;
+      castle.hpBarFill.setFillStyle(fillColor, 1);
+      castle.hpBarFill.setVisible(ratio > 0.01);
+    };
+
+    syncCastleBar(this.playerCastle);
+    syncCastleBar(this.aiCastle);
+  }
+
   requestSpawn(type) {
-    this.queueUnit({ id: type, fromShop: true }, SIDE.PLAYER);
+    this.spawnDevUnits(type, SIDE.PLAYER, 1);
+  }
+
+  spawnDevUnits(type, side = SIDE.PLAYER, count = 1) {
+    if (this.isGameOver) return false;
+    if (!UNIT_TYPES[type]) return false;
+    const total = Phaser.Math.Clamp(Number(count) || 1, 1, 24);
+    const spread = 10;
+    let spawned = 0;
+    for (let i = 0; i < total; i += 1) {
+      const offset = (i - (total - 1) / 2) * spread;
+      const ok = this.spawnUnit(type, side, {
+        payCost: false,
+        offset,
+        presenceMult: 1,
+        modifiers: {}
+      });
+      if (ok) spawned += 1;
+    }
+    return spawned > 0;
   }
 
   createWaveDraft() {
@@ -843,10 +1527,18 @@ export default class GameScene extends Phaser.Scene {
     return phaseLabels[stageIndex] || `Phase ${stageIndex + 1}`;
   }
 
+  getUnlockedWaveColumns(stageIndex = this.getStageIndex()) {
+    const baseUnlocked = 2;
+    const maxColumns = Math.max(1, this.waveSlots?.front || 4);
+    return Phaser.Math.Clamp(baseUnlocked + stageIndex, 0, maxColumns);
+  }
+
   buildUiState() {
     return {
       playerResources: this.playerResources,
       playerIncome: this.getIncomeDetails(SIDE.PLAYER).total,
+      aiResources: this.aiResources,
+      aiIncome: this.getIncomeDetails(SIDE.AI).total,
       playerCastle: {
         hp: this.playerCastle?.hp || 0,
         maxHp: this.playerCastle?.maxHp || 1
@@ -862,7 +1554,8 @@ export default class GameScene extends Phaser.Scene {
         locked: this.waveLocked,
         number: this.waveNumber || 0,
         phaseLabel: this.getPhaseLabel(),
-        stageIndex: this.getStageIndex()
+        stageIndex: this.getStageIndex(),
+        unlockedColumns: this.getUnlockedWaveColumns()
       },
       shop: {
         offers: this.shop?.player?.offers || [],
@@ -978,8 +1671,14 @@ export default class GameScene extends Phaser.Scene {
     if (!shop) return false;
     const index = shop.offers.indexOf(type);
     if (index === -1) return false;
-    shop.offers.splice(index, 1);
+    shop.offers[index] = null;
     return true;
+  }
+
+  isShopSoldOut(side) {
+    const shop = this.shop[side];
+    if (!shop || !Array.isArray(shop.offers) || shop.offers.length === 0) return false;
+    return shop.offers.every((offer) => !offer);
   }
 
   selectStance(payload, side) {
@@ -1010,10 +1709,17 @@ export default class GameScene extends Phaser.Scene {
     return draft.mid;
   }
 
-  getFirstAvailableSlot(draft) {
-    if (draft.front.includes(null)) return "front";
-    if (draft.mid.includes(null)) return "mid";
-    if (draft.rear.includes(null)) return "rear";
+  getFirstAvailableSlot(draft, unlockedColumns) {
+    const rows = ["front", "mid", "rear"];
+    const maxColumns = Math.max(0, unlockedColumns || 0);
+    for (const row of rows) {
+      const list = this.getDraftSlotList(draft, row);
+      if (!list) continue;
+      const limit = Math.min(list.length, maxColumns);
+      for (let i = 0; i < limit; i += 1) {
+        if (list[i] === null) return { slot: row, index: i };
+      }
+    }
     return null;
   }
 
@@ -1030,24 +1736,38 @@ export default class GameScene extends Phaser.Scene {
     if (!config) return false;
     const cost = config.cost;
     const draft = this.getDraft(side);
+    const unlockedColumns = this.getUnlockedWaveColumns();
+    let targetIndex = null;
     const requiresShop = side === SIDE.PLAYER || side === SIDE.AI;
     if (requiresShop && !fromShop) return false;
     if (requiresShop && !this.isShopUnitAvailable(side, type)) return false;
-    if (!slot) slot = this.getFirstAvailableSlot(draft) || "mid";
+    if (!slot) {
+      const target = this.getFirstAvailableSlot(draft, unlockedColumns);
+      if (!target) return false;
+      slot = target.slot;
+      if (typeof index !== "number") targetIndex = target.index;
+    }
     const slotList = this.getDraftSlotList(draft, slot);
     if (!slotList) return false;
+    const unlockedInRow = Math.min(unlockedColumns, slotList.length);
 
     const filledCount = this.getDraftSlotCount(draft);
-    let targetIndex = null;
 
     if (filledCount >= this.waveSupply) {
       return false;
     } else if (typeof index === "number") {
       if (index < 0 || index >= slotList.length) return false;
+      if (index >= unlockedInRow) return false;
       if (slotList[index] !== null) return false;
       targetIndex = index;
     } else {
-      const openIndex = slotList.indexOf(null);
+      let openIndex = -1;
+      for (let i = 0; i < unlockedInRow; i += 1) {
+        if (slotList[i] === null) {
+          openIndex = i;
+          break;
+        }
+      }
       if (openIndex === -1) return false;
       targetIndex = openIndex;
     }
@@ -1067,6 +1787,10 @@ export default class GameScene extends Phaser.Scene {
     }
 
     slotList[targetIndex] = type;
+
+    if (requiresShop && this.isShopSoldOut(side)) {
+      this.rollShopOffers(side, false);
+    }
 
     this.emitResourceUpdate();
     return true;
@@ -1105,6 +1829,35 @@ export default class GameScene extends Phaser.Scene {
     }
     if (!removed) return false;
 
+    return true;
+  }
+
+  moveQueuedUnit(payload, side) {
+    if (this.isGameOver) return false;
+    if (this.waveLocked) return false;
+    if (!payload?.from || !payload?.to) return false;
+
+    const draft = this.getDraft(side);
+    const unlockedColumns = this.getUnlockedWaveColumns();
+    const fromRow = payload.from.row;
+    const toRow = payload.to.row;
+    const fromIndex = Number(payload.from.index);
+    const toIndex = Number(payload.to.index);
+
+    const fromList = this.getDraftSlotList(draft, fromRow);
+    const toList = this.getDraftSlotList(draft, toRow);
+    if (!fromList || !toList) return false;
+    if (Number.isNaN(fromIndex) || Number.isNaN(toIndex)) return false;
+    if (fromIndex < 0 || fromIndex >= fromList.length) return false;
+    if (toIndex < 0 || toIndex >= toList.length) return false;
+    if (toIndex >= Math.min(unlockedColumns, toList.length)) return false;
+
+    const fromId = fromList[fromIndex];
+    if (!fromId) return false;
+    const toId = toList[toIndex];
+
+    fromList[fromIndex] = toId || null;
+    toList[toIndex] = fromId;
     return true;
   }
 
@@ -1165,8 +1918,8 @@ export default class GameScene extends Phaser.Scene {
     }
 
     const spawnX =
-      side === SIDE.PLAYER ? this.platformLeftStart + 40 : this.platformRightEnd - 40;
-    const unit = new Unit(this, config, side, spawnX + offset, this.bridgeY, modifiers);
+      side === SIDE.PLAYER ? this.platformLeftStart + this.unitSpawnInset : this.platformRightEnd - this.unitSpawnInset;
+    const unit = new Unit(this, config, side, spawnX + offset, this.unitLaneY, modifiers);
     unit.presenceMult = presenceMult;
     if (side === SIDE.PLAYER) {
       this.playerUnits.push(unit);
@@ -1174,8 +1927,8 @@ export default class GameScene extends Phaser.Scene {
       this.aiUnits.push(unit);
     }
 
-    this.spawnPulse(spawnX + offset, this.bridgeY, config.color);
-    this.spawnCallout(spawnX + offset, this.bridgeY - 40, config.name, side);
+    this.spawnPulse(spawnX + offset, this.unitLaneY, config.color);
+    this.spawnCallout(spawnX + offset, this.unitLaneY + this.unitCalloutOffsetY, config.name, side);
     this.events.emit("log", { type: "spawn", side, name: config.name });
     if (payCost) this.emitResourceUpdate();
     return true;
@@ -1342,7 +2095,10 @@ export default class GameScene extends Phaser.Scene {
 
       if (point.owner !== prevOwner) {
         this.events.emit("log", { type: "point", index: point.index, owner: point.owner });
-        this.tweens.add({ targets: [point.marker], alpha: 0.95, duration: 140, yoyo: true });
+        const pulseTargets = [point.marker];
+        if (point.rune) pulseTargets.push(point.rune);
+        if (point.glow) pulseTargets.push(point.glow);
+        this.tweens.add({ targets: pulseTargets, alpha: 0.95, duration: 140, yoyo: true });
       }
 
       if (point.owner === SIDE.PLAYER) playerCount += 1;
@@ -1357,6 +2113,14 @@ export default class GameScene extends Phaser.Scene {
       point.marker.setFillStyle(tint, 0.65);
       const coreTint = point.owner === SIDE.PLAYER ? 0x9ec9f0 : point.owner === SIDE.AI ? 0xf0b5b5 : 0x7b8598;
       point.core.setFillStyle(coreTint, 0.9);
+      if (point.rune) {
+        point.rune.setTint(coreTint);
+        point.rune.setAlpha(0.8);
+      }
+      if (point.glow) {
+        point.glow.setTint(tint);
+        point.glow.setAlpha(point.owner === "neutral" ? 0.35 : 0.6);
+      }
     }
 
     let newOwner = "neutral";
@@ -1401,17 +2165,640 @@ export default class GameScene extends Phaser.Scene {
     if (side === SIDE.PLAYER) {
       return new Phaser.Geom.Rectangle(
         this.platformLeftStart,
-        this.bridgeY - height / 2,
+        this.unitLaneY - height / 2,
         this.platformLeftEnd - this.platformLeftStart + extra,
         height
       );
     }
     return new Phaser.Geom.Rectangle(
       this.platformRightStart - extra,
-      this.bridgeY - height / 2,
+      this.unitLaneY - height / 2,
       this.platformRightEnd - this.platformRightStart + extra,
       height
     );
+  }
+
+  computeBoardLayout() {
+    const profile = this.layoutProfile;
+    const mirrorCenterX = this.playArea.x + this.playArea.width / 2;
+    const mirrorX = (x) => mirrorCenterX * 2 - x;
+
+    if (profile.mirrorMode) {
+      profile.castle.aiX = mirrorX(profile.castle.playerX);
+      profile.decks.foundation.rightStart = mirrorX(profile.decks.foundation.leftEnd);
+      profile.decks.foundation.rightEnd = mirrorX(profile.decks.foundation.leftStart);
+      profile.decks.spawn.rightStart = mirrorX(profile.decks.spawn.leftEnd);
+      profile.decks.spawn.rightEnd = mirrorX(profile.decks.spawn.leftStart);
+    }
+
+    profile.decks.foundation.leftEnd = Math.max(profile.decks.foundation.leftEnd, profile.decks.foundation.leftStart + 30);
+    profile.decks.spawn.leftEnd = Math.max(profile.decks.spawn.leftEnd, profile.decks.spawn.leftStart + 30);
+    profile.decks.foundation.rightEnd = Math.max(profile.decks.foundation.rightEnd, profile.decks.foundation.rightStart + 30);
+    profile.decks.spawn.rightEnd = Math.max(profile.decks.spawn.rightEnd, profile.decks.spawn.rightStart + 30);
+
+    this.castleXLeft = profile.castle.playerX;
+    this.castleXRight = profile.castle.aiX;
+    this.castleAnchorY = profile.castle.anchorY;
+
+    this.castleBaseWidth = profile.castle.baseWidth;
+    this.castleBaseHeight = profile.castle.baseHeight;
+    this.castleBaseCenterYOffset = profile.castle.baseCenterYOffset;
+    this.castleTowerWidth = profile.castle.towerWidth;
+    this.castleTowerHeight = profile.castle.towerHeight;
+    this.castleTowerOffsetY = profile.castle.towerOffsetY;
+    this.castleBannerOffsetX = profile.castle.bannerOffsetX;
+    this.castleBannerOffsetY = profile.castle.bannerOffsetY;
+    this.castleHpOffsetX = profile.castle.hpOffsetX;
+    this.castleHpOffsetY = profile.castle.hpOffsetY;
+    this.castleHpBarWidth = profile.castle.hpWidth;
+    this.castleHpBarHeight = profile.castle.hpHeight;
+
+    this.castleFootY =
+      this.castleAnchorY +
+      this.castleBaseCenterYOffset +
+      this.castleBaseHeight / 2 -
+      CASTLE_METRICS.baseFootInset;
+
+    this.foundationDeckY = profile.decks.foundation.topY;
+    this.foundationDeckHeight = profile.decks.foundation.height;
+    this.spawnDeckY = profile.decks.spawn.topY;
+    this.spawnDeckHeight = profile.decks.spawn.height;
+    this.bridgeY = profile.bridge.topY;
+
+    this.bridgePlankY = profile.bridge.topY + profile.bridge.plankOffsetY;
+    this.bridgeThickness = profile.bridge.thickness;
+    this.bridgeShowPillars = Boolean(profile.bridge.showPillars);
+    this.bridgeShowRopes = Boolean(profile.bridge.showRopes);
+    this.bridgeShowControlFx = Boolean(profile.bridge.showControlFx);
+    this.bridgeRopeTopY = profile.bridge.topY + profile.bridge.ropeTopOffset;
+    this.bridgeRopeBottomY = profile.bridge.topY + profile.bridge.ropeBottomOffset;
+    this.bridgePillarY = profile.bridge.topY + profile.bridge.pillarOffsetY;
+    this.bridgePillarHeight = profile.bridge.pillarHeight;
+    this.bridgePillarStep = profile.bridge.pillarStep;
+
+    this.turretSideInset = profile.turret.sideInset;
+    this.turretY = this.spawnDeckY + profile.turret.yOffset;
+
+    this.unitSpawnInset = profile.units.spawnInset;
+    this.unitLaneY = profile.units.laneY;
+    this.unitCalloutOffsetY = profile.units.calloutOffsetY;
+
+    this.controlY = profile.control.y;
+    this.controlZoneWidth = profile.control.zoneWidth;
+    this.controlZoneHeight = profile.control.zoneHeight;
+
+    const leftFoundationStart = profile.decks.foundation.leftStart;
+    const leftFoundationEnd = profile.decks.foundation.leftEnd;
+    const leftSpawnStart = profile.decks.spawn.leftStart;
+    const leftSpawnEnd = profile.decks.spawn.leftEnd;
+
+    const rightFoundationStart = profile.decks.foundation.rightStart;
+    const rightFoundationEnd = profile.decks.foundation.rightEnd;
+    const rightSpawnStart = profile.decks.spawn.rightStart;
+    const rightSpawnEnd = profile.decks.spawn.rightEnd;
+
+    this.boardLayout = {
+      leftFoundationStart,
+      leftFoundationEnd,
+      rightFoundationStart,
+      rightFoundationEnd,
+      leftSpawnStart,
+      leftSpawnEnd,
+      rightSpawnStart,
+      rightSpawnEnd,
+      bridgeLeft: leftSpawnEnd,
+      bridgeRight: rightSpawnStart
+    };
+  }
+
+  drawDeckSegment(startX, endX, topY, height, depth, hasPlatformTexture) {
+    const width = endX - startX;
+    const centerX = (startX + endX) / 2;
+    const centerY = topY + height / 2;
+    if (hasPlatformTexture) {
+      this.addBridgeVisual(this.add.image(centerX, centerY, "platform_stone").setDisplaySize(width + 16, height).setDepth(depth));
+      return;
+    }
+    this.addBridgeVisual(this.add.rectangle(centerX, centerY, width, height, 0x3a3430).setStrokeStyle(2, 0x241b18, 1).setDepth(depth));
+  }
+
+  loadLayoutProfile() {
+    if (typeof window === "undefined") return;
+    try {
+      const raw = window.localStorage.getItem(LAYOUT_STORAGE_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object") return;
+      this.layoutProfile = {
+        ...this.layoutProfile,
+        ...parsed,
+        castle: { ...this.layoutProfile.castle, ...(parsed.castle || {}) },
+        decks: {
+          foundation: { ...this.layoutProfile.decks.foundation, ...(parsed.decks?.foundation || {}) },
+          spawn: { ...this.layoutProfile.decks.spawn, ...(parsed.decks?.spawn || {}) }
+        },
+        bridge: { ...this.layoutProfile.bridge, ...(parsed.bridge || {}) },
+        turret: { ...this.layoutProfile.turret, ...(parsed.turret || {}) },
+        units: { ...this.layoutProfile.units, ...(parsed.units || {}) },
+        control: { ...this.layoutProfile.control, ...(parsed.control || {}) }
+      };
+    } catch {
+      // ignore malformed layout storage
+    }
+  }
+
+  saveLayoutProfile() {
+    if (typeof window === "undefined") return;
+    try {
+      window.localStorage.setItem(LAYOUT_STORAGE_KEY, JSON.stringify(this.layoutProfile));
+    } catch {
+      // ignore storage limits
+    }
+  }
+
+  exportLayoutProfile() {
+    const text = JSON.stringify(this.layoutProfile, null, 2);
+    if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {
+        // ignore clipboard errors
+      });
+    }
+    return text;
+  }
+
+  registerLayoutDevHotkeys() {
+    if (!this.input?.keyboard) return;
+    this.layoutDev = {
+      enabled: false,
+      selectedId: null,
+      handles: [],
+      pointerDown: false,
+      dirty: false
+    };
+    this.layoutDevToggleKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.K);
+    this.layoutDevKeys = {
+      shift: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT),
+      left: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.LEFT),
+      right: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT),
+      up: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.UP),
+      down: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN)
+    };
+
+    this.input.on("wheel", (_pointer, _objects, _dx, dy) => {
+      if (!this.layoutDev?.enabled) return;
+      const selected = this.layoutDev.handles.find((h) => h.id === this.layoutDev.selectedId);
+      if (!selected || !selected.onWheel) return;
+      selected.onWheel(dy);
+      this.commitLayoutEdit();
+    });
+  }
+
+  handleLayoutDevInput() {
+    if (!this.layoutDev) return;
+    if (this.layoutDevToggleKey && Phaser.Input.Keyboard.JustDown(this.layoutDevToggleKey)) {
+      this.toggleLayoutDev();
+    }
+    if (!this.layoutDev.enabled || !this.input?.keyboard) return;
+
+    const nudge = this.layoutDevKeys.shift.isDown ? 5 : 1;
+    const selected = this.layoutDev.handles.find((h) => h.id === this.layoutDev.selectedId);
+    if (!selected || !selected.set) return;
+
+    const pos = selected.get();
+    let changed = false;
+    if (this.input.keyboard.checkDown(this.layoutDevKeys.left, 30)) {
+      pos.x -= nudge;
+      changed = true;
+    }
+    if (this.input.keyboard.checkDown(this.layoutDevKeys.right, 30)) {
+      pos.x += nudge;
+      changed = true;
+    }
+    if (this.input.keyboard.checkDown(this.layoutDevKeys.up, 30)) {
+      pos.y -= nudge;
+      changed = true;
+    }
+    if (this.input.keyboard.checkDown(this.layoutDevKeys.down, 30)) {
+      pos.y += nudge;
+      changed = true;
+    }
+    if (changed) {
+      selected.set(pos.x, pos.y);
+      this.commitLayoutEdit();
+    }
+  }
+
+  toggleLayoutDev() {
+    this.layoutDev.enabled = !this.layoutDev.enabled;
+    if (this.layoutDev.enabled) {
+      this.clearCombatUnits();
+      this.setupLayoutHandles();
+      this.layoutDev.selectedId = this.layoutDev.handles[0]?.id || null;
+      this.syncLayoutDevPanel();
+      return;
+    }
+    this.destroyLayoutHandles();
+    this.syncLayoutDevPanel();
+  }
+
+  createLayoutDevPanel() {
+    if (typeof document === "undefined") return;
+    const panel = document.createElement("div");
+    panel.id = "layout-dev-panel";
+    panel.style.position = "fixed";
+    panel.style.right = "16px";
+    panel.style.top = "16px";
+    panel.style.width = "300px";
+    panel.style.padding = "10px";
+    panel.style.background = "rgba(11, 14, 20, 0.88)";
+    panel.style.border = "1px solid rgba(180, 188, 204, 0.35)";
+    panel.style.borderRadius = "8px";
+    panel.style.color = "#e8edf7";
+    panel.style.font = "12px/1.4 monospace";
+    panel.style.zIndex = "9999";
+    panel.style.display = "none";
+    panel.innerHTML = `
+      <div style="margin-bottom:6px; font-weight:700;">Layout Dev Tool</div>
+      <div style="margin-bottom:8px; opacity:0.85;">Toggle: K. Drag handles to move, wheel to resize selected.</div>
+      <div data-layout-info style="margin-bottom:8px; min-height:48px;"></div>
+      <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <button data-layout-copy type="button">Copy JSON</button>
+        <button data-layout-save type="button">Save</button>
+        <button data-layout-reset type="button">Reset</button>
+        <label style="display:flex; align-items:center; gap:4px;">
+          <input data-layout-mirror type="checkbox" checked /> Mirror
+        </label>
+      </div>
+      <div style="display:flex; gap:10px; margin-top:8px; flex-wrap:wrap;">
+        <label style="display:flex; align-items:center; gap:4px;">
+          <input data-layout-pillars type="checkbox" /> Pillars
+        </label>
+        <label style="display:flex; align-items:center; gap:4px;">
+          <input data-layout-ropes type="checkbox" /> Ropes
+        </label>
+        <label style="display:flex; align-items:center; gap:4px;">
+          <input data-layout-controlfx type="checkbox" /> Control FX
+        </label>
+      </div>
+    `;
+    document.body.appendChild(panel);
+
+    const copyBtn = panel.querySelector("[data-layout-copy]");
+    const saveBtn = panel.querySelector("[data-layout-save]");
+    const resetBtn = panel.querySelector("[data-layout-reset]");
+    const mirrorBox = panel.querySelector("[data-layout-mirror]");
+    const pillarsBox = panel.querySelector("[data-layout-pillars]");
+    const ropesBox = panel.querySelector("[data-layout-ropes]");
+    const controlFxBox = panel.querySelector("[data-layout-controlfx]");
+
+    copyBtn?.addEventListener("click", () => this.exportLayoutProfile());
+    saveBtn?.addEventListener("click", () => this.saveLayoutProfile());
+    resetBtn?.addEventListener("click", () => {
+      this.layoutProfile = createDefaultLayoutProfile(this.playArea);
+      this.computeBoardLayout();
+      this.rebuildLayoutVisuals();
+      this.setupLayoutHandles();
+      this.saveLayoutProfile();
+      this.syncLayoutDevPanel();
+    });
+    mirrorBox?.addEventListener("change", (event) => {
+      this.layoutProfile.mirrorMode = Boolean(event.target?.checked);
+      this.commitLayoutEdit();
+    });
+    pillarsBox?.addEventListener("change", (event) => {
+      this.layoutProfile.bridge.showPillars = Boolean(event.target?.checked);
+      this.commitLayoutEdit();
+    });
+    ropesBox?.addEventListener("change", (event) => {
+      this.layoutProfile.bridge.showRopes = Boolean(event.target?.checked);
+      this.commitLayoutEdit();
+    });
+    controlFxBox?.addEventListener("change", (event) => {
+      this.layoutProfile.bridge.showControlFx = Boolean(event.target?.checked);
+      this.commitLayoutEdit();
+    });
+
+    this.layoutDevPanel = panel;
+  }
+
+  destroyLayoutDevPanel() {
+    this.destroyLayoutHandles();
+    if (this.layoutDevPanel?.parentElement) {
+      this.layoutDevPanel.parentElement.removeChild(this.layoutDevPanel);
+    }
+    this.layoutDevPanel = null;
+  }
+
+  syncLayoutDevPanel() {
+    if (!this.layoutDevPanel) return;
+    this.layoutDevPanel.style.display = this.layoutDev?.enabled ? "block" : "none";
+    const info = this.layoutDevPanel.querySelector("[data-layout-info]");
+    const mirror = this.layoutDevPanel.querySelector("[data-layout-mirror]");
+    const pillars = this.layoutDevPanel.querySelector("[data-layout-pillars]");
+    const ropes = this.layoutDevPanel.querySelector("[data-layout-ropes]");
+    const controlFx = this.layoutDevPanel.querySelector("[data-layout-controlfx]");
+    if (mirror) mirror.checked = Boolean(this.layoutProfile?.mirrorMode);
+    if (pillars) pillars.checked = Boolean(this.layoutProfile?.bridge?.showPillars);
+    if (ropes) ropes.checked = Boolean(this.layoutProfile?.bridge?.showRopes);
+    if (controlFx) controlFx.checked = Boolean(this.layoutProfile?.bridge?.showControlFx);
+    if (!info) return;
+    if (!this.layoutDev?.enabled) {
+      info.textContent = "";
+      return;
+    }
+    const selected = this.layoutDev.handles.find((h) => h.id === this.layoutDev.selectedId);
+    if (!selected) {
+      info.textContent = "No selection";
+      return;
+    }
+    const pos = selected.get();
+    info.textContent = `${selected.label}  x:${Math.round(pos.x)} y:${Math.round(pos.y)}`;
+  }
+
+  setupLayoutHandles() {
+    this.destroyLayoutHandles();
+    const makeHandle = (id, label, color, get, set, onWheel) => {
+      const p = get();
+      const dot = this.add.circle(p.x, p.y, 9, color, 0.95).setDepth(100).setStrokeStyle(2, 0x10131b, 1);
+      const txt = this.add.text(p.x + 12, p.y - 8, label, {
+        fontFamily: "monospace",
+        fontSize: "11px",
+        color: "#f0f4ff"
+      }).setDepth(101);
+      dot.setInteractive({ draggable: true, useHandCursor: true });
+      this.input.setDraggable(dot);
+      const handle = { id, label, dot, txt, get, set, onWheel };
+      dot.on("pointerdown", () => {
+        this.layoutDev.selectedId = id;
+        this.refreshLayoutHandles();
+        this.syncLayoutDevPanel();
+      });
+      dot.on("drag", (_pointer, dragX, dragY) => {
+        set(dragX, dragY);
+        this.commitLayoutEdit();
+      });
+      this.layoutDev.handles.push(handle);
+    };
+
+    makeHandle(
+      "castle-player",
+      "Castle",
+      0x7bb1d8,
+      () => ({ x: this.layoutProfile.castle.playerX, y: this.layoutProfile.castle.anchorY }),
+      (x, y) => {
+        this.layoutProfile.castle.playerX = x;
+        this.layoutProfile.castle.anchorY = y;
+      },
+      (dy) => {
+        const mult = dy > 0 ? 0.98 : 1.02;
+        this.layoutProfile.castle.baseWidth = Phaser.Math.Clamp(this.layoutProfile.castle.baseWidth * mult, 80, 260);
+        this.layoutProfile.castle.baseHeight = Phaser.Math.Clamp(this.layoutProfile.castle.baseHeight * mult, 110, 320);
+        this.layoutProfile.castle.towerWidth = Phaser.Math.Clamp(this.layoutProfile.castle.towerWidth * mult, 40, 180);
+        this.layoutProfile.castle.towerHeight = Phaser.Math.Clamp(this.layoutProfile.castle.towerHeight * mult, 30, 150);
+      }
+    );
+
+    makeHandle(
+      "castle-hp",
+      "HP Bar",
+      0x95d79a,
+      () => ({
+        x: this.castleXLeft + this.layoutProfile.castle.hpOffsetX,
+        y: this.layoutProfile.castle.anchorY + this.layoutProfile.castle.hpOffsetY
+      }),
+      (x, y) => {
+        this.layoutProfile.castle.hpOffsetX = x - this.castleXLeft;
+        this.layoutProfile.castle.hpOffsetY = y - this.layoutProfile.castle.anchorY;
+      },
+      (dy) => {
+        const mult = dy > 0 ? 0.97 : 1.03;
+        this.layoutProfile.castle.hpWidth = Phaser.Math.Clamp(this.layoutProfile.castle.hpWidth * mult, 120, 420);
+        this.layoutProfile.castle.hpHeight = Phaser.Math.Clamp(this.layoutProfile.castle.hpHeight * mult, 10, 48);
+      }
+    );
+
+    makeHandle(
+      "foundation-left-start",
+      "Found L",
+      0x9aa7ba,
+      () => ({ x: this.layoutProfile.decks.foundation.leftStart, y: this.layoutProfile.decks.foundation.topY }),
+      (x, y) => {
+        this.layoutProfile.decks.foundation.leftStart = x;
+        this.layoutProfile.decks.foundation.topY = y;
+      },
+      (dy) => {
+        this.layoutProfile.decks.foundation.height = Phaser.Math.Clamp(this.layoutProfile.decks.foundation.height + (dy > 0 ? -2 : 2), 30, 160);
+      }
+    );
+
+    makeHandle(
+      "foundation-left-end",
+      "Found R",
+      0x9aa7ba,
+      () => ({ x: this.layoutProfile.decks.foundation.leftEnd, y: this.layoutProfile.decks.foundation.topY }),
+      (x, y) => {
+        this.layoutProfile.decks.foundation.leftEnd = Math.max(x, this.layoutProfile.decks.foundation.leftStart + 20);
+        this.layoutProfile.decks.foundation.topY = y;
+      }
+    );
+
+    makeHandle(
+      "spawn-left-start",
+      "Spawn L",
+      0xd9bf8b,
+      () => ({ x: this.layoutProfile.decks.spawn.leftStart, y: this.layoutProfile.decks.spawn.topY }),
+      (x, y) => {
+        this.layoutProfile.decks.spawn.leftStart = x;
+        this.layoutProfile.decks.spawn.topY = y;
+      },
+      (dy) => {
+        this.layoutProfile.decks.spawn.height = Phaser.Math.Clamp(this.layoutProfile.decks.spawn.height + (dy > 0 ? -2 : 2), 24, 140);
+      }
+    );
+
+    makeHandle(
+      "spawn-left-end",
+      "Spawn R",
+      0xd9bf8b,
+      () => ({ x: this.layoutProfile.decks.spawn.leftEnd, y: this.layoutProfile.decks.spawn.topY }),
+      (x, y) => {
+        this.layoutProfile.decks.spawn.leftEnd = Math.max(x, this.layoutProfile.decks.spawn.leftStart + 20);
+        this.layoutProfile.decks.spawn.topY = y;
+      }
+    );
+
+    makeHandle(
+      "bridge-left",
+      "Bridge L",
+      0xb6c6a2,
+      () => ({ x: this.layoutProfile.decks.spawn.leftEnd, y: this.layoutProfile.bridge.topY }),
+      (x, y) => {
+        this.layoutProfile.decks.spawn.leftEnd = x;
+        this.layoutProfile.bridge.topY = y;
+      },
+      (dy) => {
+        this.layoutProfile.bridge.thickness = Phaser.Math.Clamp(this.layoutProfile.bridge.thickness + (dy > 0 ? -2 : 2), 18, 100);
+      }
+    );
+
+    makeHandle(
+      "bridge-thickness",
+      "Bridge H",
+      0x9ed592,
+      () => ({ x: this.width / 2, y: this.layoutProfile.bridge.topY + this.layoutProfile.bridge.plankOffsetY + this.layoutProfile.bridge.thickness / 2 }),
+      (_x, y) => {
+        this.layoutProfile.bridge.thickness = Phaser.Math.Clamp((y - (this.layoutProfile.bridge.topY + this.layoutProfile.bridge.plankOffsetY)) * 2, 14, 120);
+      },
+      (dy) => {
+        this.layoutProfile.bridge.thickness = Phaser.Math.Clamp(this.layoutProfile.bridge.thickness + (dy > 0 ? -2 : 2), 14, 120);
+      }
+    );
+
+    makeHandle(
+      "turret-player",
+      "Turret",
+      0x84c5c0,
+      () => ({ x: this.platformLeftEnd - this.layoutProfile.turret.sideInset, y: this.spawnDeckY + this.layoutProfile.turret.yOffset }),
+      (x, y) => {
+        this.layoutProfile.turret.sideInset = this.platformLeftEnd - x;
+        this.layoutProfile.turret.yOffset = y - this.spawnDeckY;
+      },
+      (dy) => {
+        const mult = dy > 0 ? 0.96 : 1.04;
+        this.layoutProfile.turret.baseWidth = Phaser.Math.Clamp(this.layoutProfile.turret.baseWidth * mult, 20, 120);
+        this.layoutProfile.turret.baseHeight = Phaser.Math.Clamp(this.layoutProfile.turret.baseHeight * mult, 16, 100);
+        this.layoutProfile.turret.headWidth = Phaser.Math.Clamp(this.layoutProfile.turret.headWidth * mult, 18, 140);
+        this.layoutProfile.turret.headHeight = Phaser.Math.Clamp(this.layoutProfile.turret.headHeight * mult, 18, 140);
+      }
+    );
+
+    makeHandle(
+      "turret-hp",
+      "Turret HP",
+      0x8fd6ff,
+      () => ({
+        x: this.platformLeftEnd - this.layoutProfile.turret.sideInset + this.layoutProfile.turret.hpOffsetX,
+        y: this.spawnDeckY + this.layoutProfile.turret.yOffset + this.layoutProfile.turret.hpOffsetY
+      }),
+      (x, y) => {
+        const turretX = this.platformLeftEnd - this.layoutProfile.turret.sideInset;
+        const turretY = this.spawnDeckY + this.layoutProfile.turret.yOffset;
+        this.layoutProfile.turret.hpOffsetX = x - turretX;
+        this.layoutProfile.turret.hpOffsetY = y - turretY;
+      },
+      (dy) => {
+        const mult = dy > 0 ? 0.97 : 1.03;
+        this.layoutProfile.turret.hpWidth = Phaser.Math.Clamp(this.layoutProfile.turret.hpWidth * mult, 20, 140);
+        this.layoutProfile.turret.hpHeight = Phaser.Math.Clamp(this.layoutProfile.turret.hpHeight * mult, 3, 24);
+      }
+    );
+
+    makeHandle(
+      "unit-spawn-player",
+      "Unit Spawn",
+      0xe2a58a,
+      () => ({ x: this.platformLeftStart + this.layoutProfile.units.spawnInset, y: this.layoutProfile.units.laneY }),
+      (x, y) => {
+        this.layoutProfile.units.spawnInset = x - this.platformLeftStart;
+        this.layoutProfile.units.laneY = y;
+      }
+    );
+
+    makeHandle(
+      "control-line",
+      "Control",
+      0xc99ce4,
+      () => ({ x: this.width / 2, y: this.layoutProfile.control.y }),
+      (_x, y) => {
+        this.layoutProfile.control.y = y;
+      },
+      (dy) => {
+        this.layoutProfile.control.zoneWidth = Phaser.Math.Clamp(this.layoutProfile.control.zoneWidth + (dy > 0 ? -4 : 4), 40, 220);
+      }
+    );
+
+    this.refreshLayoutHandles();
+  }
+
+  refreshLayoutHandles() {
+    if (!this.layoutDev?.handles) return;
+    for (const handle of this.layoutDev.handles) {
+      const p = handle.get();
+      handle.dot.setPosition(p.x, p.y);
+      handle.txt.setPosition(p.x + 12, p.y - 8);
+      handle.dot.setScale(this.layoutDev.selectedId === handle.id ? 1.2 : 1);
+      handle.txt.setAlpha(this.layoutDev.selectedId === handle.id ? 1 : 0.7);
+    }
+  }
+
+  destroyLayoutHandles() {
+    if (!this.layoutDev?.handles) return;
+    for (const handle of this.layoutDev.handles) {
+      handle.dot.destroy();
+      handle.txt.destroy();
+    }
+    this.layoutDev.handles = [];
+    this.layoutDev.selectedId = null;
+  }
+
+  commitLayoutEdit() {
+    this.computeBoardLayout();
+    this.rebuildLayoutVisuals();
+    this.refreshLayoutHandles();
+    this.saveLayoutProfile();
+    this.syncLayoutDevPanel();
+  }
+
+  addBridgeVisual(obj) {
+    this.bridgeVisuals.push(obj);
+    return obj;
+  }
+
+  clearBridgeVisuals() {
+    for (const obj of this.bridgeVisuals || []) {
+      obj.destroy();
+    }
+    this.bridgeVisuals = [];
+  }
+
+  destroyCastles() {
+    const destroyCastle = (castle) => {
+      if (!castle) return;
+      castle.base?.destroy();
+      castle.tower?.destroy();
+      castle.banner?.destroy();
+      castle.hpBarFrame?.destroy();
+      castle.hpBarBack?.destroy();
+      castle.hpBarFill?.destroy();
+    };
+    destroyCastle(this.playerCastle);
+    destroyCastle(this.aiCastle);
+    this.playerCastle = null;
+    this.aiCastle = null;
+  }
+
+  destroyTurrets() {
+    if (this.playerTurret) this.playerTurret.destroy();
+    if (this.aiTurret) this.aiTurret.destroy();
+    this.playerTurret = null;
+    this.aiTurret = null;
+  }
+
+  rebuildLayoutVisuals() {
+    this.clearBridgeVisuals();
+    this.destroyCastles();
+    this.destroyTurrets();
+    this.createBridge();
+    this.createCastles();
+    this.createTurrets();
+    this.updateGhostFormation();
+  }
+
+  clearCombatUnits() {
+    for (const unit of this.playerUnits || []) unit.destroy();
+    for (const unit of this.aiUnits || []) unit.destroy();
+    this.playerUnits = [];
+    this.aiUnits = [];
   }
 
   cleanupUnits() {
@@ -1419,13 +2806,13 @@ export default class GameScene extends Phaser.Scene {
     const beforeAi = this.aiUnits.length;
 
     this.playerUnits = this.playerUnits.filter((unit) => {
-      if (unit.isAlive()) return true;
+      if (unit.isAlive() || !unit.isReadyForCleanup()) return true;
       unit.destroy();
       return false;
     });
 
     this.aiUnits = this.aiUnits.filter((unit) => {
-      if (unit.isAlive()) return true;
+      if (unit.isAlive() || !unit.isReadyForCleanup()) return true;
       unit.destroy();
       return false;
     });
@@ -1467,7 +2854,7 @@ export default class GameScene extends Phaser.Scene {
     if (this.aiCastle.hp < this.playerCastle.hp * 0.85) stanceId = "defensive";
     else if (aiPoints < playerPoints) stanceId = "aggressive";
     this.selectStance({ id: stanceId }, SIDE.AI);
-    const offers = this.shop.ai?.offers || [];
+    const offers = (this.shop.ai?.offers || []).filter(Boolean);
     if (offers.length === 0) return;
 
     const draft = this.aiDraft || { front: [], mid: [], rear: [] };

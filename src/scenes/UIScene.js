@@ -20,6 +20,11 @@ export default class UIScene extends Phaser.Scene {
     this.gameScene = this.scene.get("Game");
     this.activeSlot = "mid";
     this.activeSlotIndex = null;
+    this.tooltipShowDelay = 1000;
+    this.tooltipHideDelay = 100;
+    this.tooltipShowEvent = null;
+    this.tooltipHideEvent = null;
+    this.pendingTooltipArgs = null;
 
     this.panelColor = 0x1f232d;
     this.panelStroke = 0x454c5b;
@@ -561,6 +566,35 @@ export default class UIScene extends Phaser.Scene {
   }
 
   showTooltip(x, y, button) {
+    if (this.tooltipHideEvent) {
+      this.tooltipHideEvent.remove(false);
+      this.tooltipHideEvent = null;
+    }
+    this.pendingTooltipArgs = { x, y, button };
+    if (this.tooltipShowEvent) this.tooltipShowEvent.remove(false);
+    this.tooltipShowEvent = this.time.delayedCall(this.tooltipShowDelay, () => {
+      this.tooltipShowEvent = null;
+      const pending = this.pendingTooltipArgs;
+      this.pendingTooltipArgs = null;
+      if (!pending) return;
+      this.renderTooltip(pending.x, pending.y, pending.button);
+    });
+  }
+
+  hideTooltip() {
+    if (this.tooltipShowEvent) {
+      this.tooltipShowEvent.remove(false);
+      this.tooltipShowEvent = null;
+    }
+    this.pendingTooltipArgs = null;
+    if (this.tooltipHideEvent) this.tooltipHideEvent.remove(false);
+    this.tooltipHideEvent = this.time.delayedCall(this.tooltipHideDelay, () => {
+      this.tooltipHideEvent = null;
+      this.tooltip.setVisible(false);
+    });
+  }
+
+  renderTooltip(x, y, button) {
     if (!button || !button.meta) return;
     const meta = button.meta;
     if (meta.type === "unit" || meta.type === "shop") {
@@ -591,10 +625,6 @@ export default class UIScene extends Phaser.Scene {
     const maxY = this.scale.height - this.tooltipBg.height - 12;
     this.tooltip.setPosition(Math.min(x, maxX), Math.min(y, maxY));
     this.tooltip.setVisible(true);
-  }
-
-  hideTooltip() {
-    this.tooltip.setVisible(false);
   }
 
   update() {

@@ -3,13 +3,6 @@ import { ABILITIES } from "../data/abilities.js";
 import { SHOP_CONFIG } from "../data/shop.js";
 import { STANCES } from "../data/stances.js";
 
-const ROLE_LABELS = {
-  frontline: "Frontline",
-  damage: "Damage",
-  support: "Support",
-  disruptor: "Disruptor"
-};
-
 const ROLE_TAGS = {
   frontline: "F",
   damage: "D",
@@ -26,14 +19,22 @@ const ROLE_COLORS = {
 
 const PHASE_LABELS = ["Early", "Mid", "Late", "Final"];
 
+function getUnitPortraitPath(unitId) {
+  return `/assets/units/portrait-large-${unitId}.jpg`;
+}
+
 export default class UIController {
   constructor(game) {
     this.game = game;
     this.scene = null;
     this.state = null;
-    this.activeSlot = "mid";
-    this.activeSlotIndex = null;
     this.waveSlotsSignature = "";
+    this.dragSource = null;
+    this.tooltipShowDelay = 1000;
+    this.tooltipHideDelay = 100;
+    this.tooltipShowTimer = null;
+    this.tooltipHideTimer = null;
+    this.pendingTooltipTarget = null;
 
     this.buildDOM();
     this.bindScene();
@@ -64,13 +65,6 @@ export default class UIController {
               <div class="income-value" data-ui="income">--</div>
               <button class="ui-info" data-tooltip-type="interest">i</button>
             </div>
-            <div class="hp-block">
-              <div class="hp-label">Castle</div>
-              <div class="hp-bar">
-                <div class="hp-fill" data-ui="player-hp-fill"></div>
-              </div>
-              <div class="hp-text" data-ui="player-hp-text">--</div>
-            </div>
           </div>
           <div class="top-center">
             <div class="wave-meta">
@@ -93,12 +87,13 @@ export default class UIController {
             </div>
           </div>
           <div class="top-right">
-            <div class="hp-block">
-              <div class="hp-label">Enemy</div>
-              <div class="hp-bar enemy">
-                <div class="hp-fill" data-ui="ai-hp-fill"></div>
-              </div>
-              <div class="hp-text" data-ui="ai-hp-text">--</div>
+            <div class="resource-block is-enemy">
+              <div class="resource-title">Enemy Resources</div>
+              <div class="resource-value" data-ui="enemy-resources">--</div>
+            </div>
+            <div class="income-block is-enemy">
+              <div class="income-title">Enemy Income</div>
+              <div class="income-value" data-ui="enemy-income">--</div>
             </div>
           </div>
         </div>
@@ -121,17 +116,14 @@ export default class UIController {
           </div>
           <div class="panel-col wave-panel">
             <div class="panel-header">
-              <div>
-                <div class="panel-title">Wave Builder</div>
-                <div class="panel-subtitle" data-ui="wave-auto">Auto --</div>
+              <div class="panel-title">Wave Builder</div>
+            </div>
+              <div class="wave-layout">
+                <div class="wave-grid" data-ui="wave-grid"></div>
+                <div class="stance-column">
+                  <div class="stance-list" data-ui="stance-buttons"></div>
+                </div>
               </div>
-            </div>
-            <div class="wave-queue" data-ui="wave-queue">Queue: --</div>
-            <div class="stance-row">
-              <div class="stance-label">Stance</div>
-              <div class="stance-buttons" data-ui="stance-buttons"></div>
-            </div>
-            <div class="wave-rows" data-ui="wave-rows"></div>
           </div>
           <div class="panel-col ability-panel">
             <div class="panel-header">
@@ -146,6 +138,10 @@ export default class UIController {
         <div class="ui-tooltip" data-ui="tooltip">
           <div class="ui-tooltip-text" data-ui="tooltip-text"></div>
         </div>
+        <div class="wave-warning" data-ui="wave-warning">
+          <div class="wave-warning-label">WAVE IN</div>
+          <div class="wave-warning-count" data-ui="wave-warning-count">5</div>
+        </div>
         <div class="ui-gameover" data-ui="gameover"></div>
       </div>
     `;
@@ -156,10 +152,8 @@ export default class UIController {
     this.refs = {
       resources: root.querySelector("[data-ui='resources']"),
       income: root.querySelector("[data-ui='income']"),
-      playerHpFill: root.querySelector("[data-ui='player-hp-fill']"),
-      aiHpFill: root.querySelector("[data-ui='ai-hp-fill']"),
-      playerHpText: root.querySelector("[data-ui='player-hp-text']"),
-      aiHpText: root.querySelector("[data-ui='ai-hp-text']"),
+      enemyResources: root.querySelector("[data-ui='enemy-resources']"),
+      enemyIncome: root.querySelector("[data-ui='enemy-income']"),
       waveLabel: root.querySelector("[data-ui='wave-label']"),
       wavePhase: root.querySelector("[data-ui='wave-phase']"),
       waveCountdown: root.querySelector("[data-ui='wave-countdown']"),
@@ -168,13 +162,13 @@ export default class UIController {
       reroll: root.querySelector("[data-ui='reroll']"),
       rerollCost: root.querySelector("[data-ui='reroll-cost']"),
       shopList: root.querySelector("[data-ui='shop-list']"),
-      waveAuto: root.querySelector("[data-ui='wave-auto']"),
-      waveQueue: root.querySelector("[data-ui='wave-queue']"),
       stanceButtons: root.querySelector("[data-ui='stance-buttons']"),
-      waveRows: root.querySelector("[data-ui='wave-rows']"),
+      waveGrid: root.querySelector("[data-ui='wave-grid']"),
       abilityList: root.querySelector("[data-ui='ability-list']"),
       tooltip: root.querySelector("[data-ui='tooltip']"),
       tooltipText: root.querySelector("[data-ui='tooltip-text']"),
+      waveWarning: root.querySelector("[data-ui='wave-warning']"),
+      waveWarningCount: root.querySelector("[data-ui='wave-warning-count']"),
       gameover: root.querySelector("[data-ui='gameover']")
     };
 
@@ -231,24 +225,39 @@ export default class UIController {
     this.shopCards = [];
     this.refs.shopList.innerHTML = "";
     for (let i = 0; i < SHOP_CONFIG.offersPerWave; i += 1) {
+      const slot = document.createElement("div");
+      slot.className = "shop-slot";
+      slot.dataset.index = `${i}`;
+
       const card = document.createElement("button");
-      card.className = "ui-card";
+      card.className = "ui-card ui-card--shop";
       card.type = "button";
       card.dataset.index = `${i}`;
       card.dataset.tooltipType = "shop";
       card.innerHTML = `
-        <div class="ui-card-role">-</div>
-        <div class="ui-card-body">
+        <div class="ui-card-image"></div>
+        <div class="ui-card-main">
           <div class="ui-card-title">No offer</div>
-          <div class="ui-card-subtitle">--</div>
+          <div class="ui-card-meta">
+            <div class="ui-card-class">-</div>
+            <div class="ui-card-price">--</div>
+          </div>
         </div>
+      `;
+
+      const placeholder = document.createElement("div");
+      placeholder.className = "shop-slot-placeholder";
+      placeholder.innerHTML = `
+        <div class="shop-slot-label">Sold</div>
       `;
 
       card.addEventListener("click", () => this.handleShopClick(card));
       card.addEventListener("mouseenter", (event) => this.showTooltip(event.currentTarget));
       card.addEventListener("mouseleave", () => this.hideTooltip());
 
-      this.refs.shopList.appendChild(card);
+      slot.appendChild(card);
+      slot.appendChild(placeholder);
+      this.refs.shopList.appendChild(slot);
       this.shopCards.push(card);
     }
   }
@@ -285,16 +294,23 @@ export default class UIController {
     this.stanceButtons = new Map();
     this.refs.stanceButtons.innerHTML = "";
     const order = ["normal", "defensive", "aggressive"];
-    const labels = { normal: "N", defensive: "D", aggressive: "A" };
+    const labels = {
+      normal: "Normal",
+      defensive: "Defensive",
+      aggressive: "Aggressive"
+    };
     order.forEach((id) => {
       const stance = STANCES[id];
       const btn = document.createElement("button");
-      btn.className = "ui-mini-button";
+      btn.className = "stance-item";
       btn.type = "button";
       btn.dataset.id = id;
       btn.dataset.tooltipType = "stance";
       btn.dataset.tooltipId = id;
-      btn.textContent = labels[id] || "?";
+      btn.innerHTML = `
+        <div class="stance-icon" aria-hidden="true">${labels[id]?.[0] || "?"}</div>
+        <div class="stance-name">${labels[id] || stance?.name || "Unknown"}</div>
+      `;
       btn.addEventListener("click", () => this.handleStanceClick(id));
       btn.addEventListener("mouseenter", (event) => this.showTooltip(event.currentTarget));
       btn.addEventListener("mouseleave", () => this.hideTooltip());
@@ -310,50 +326,30 @@ export default class UIController {
     if (signature === this.waveSlotsSignature) return;
     this.waveSlotsSignature = signature;
 
-    this.waveRowButtons = new Map();
     this.waveSlotButtons = [];
-    this.refs.waveRows.innerHTML = "";
+    this.refs.waveGrid.innerHTML = "";
 
-    const rows = [
-      { id: "front", label: "Front", color: "#5f7685" },
-      { id: "mid", label: "Mid", color: "#a67f5d" },
-      { id: "rear", label: "Rear", color: "#8fbf99" }
-    ];
-
+    const rows = ["front", "mid", "rear"];
     rows.forEach((row) => {
-      const rowEl = document.createElement("div");
-      rowEl.className = "wave-row";
-
-      const labelBtn = document.createElement("button");
-      labelBtn.className = "wave-row-label";
-      labelBtn.type = "button";
-      labelBtn.textContent = row.label;
-      labelBtn.style.borderColor = row.color;
-      labelBtn.addEventListener("click", () => this.handleRowSelect(row.id));
-
-      const slots = document.createElement("div");
-      slots.className = "wave-slots";
-
-      const slotCount = waveSlots?.[row.id] || 0;
+      const slotCount = waveSlots?.[row] || 0;
       for (let i = 0; i < slotCount; i += 1) {
         const slotBtn = document.createElement("button");
         slotBtn.className = "wave-slot";
         slotBtn.type = "button";
-        slotBtn.dataset.row = row.id;
+        slotBtn.dataset.row = row;
         slotBtn.dataset.index = `${i}`;
         slotBtn.dataset.tooltipType = "unit";
         slotBtn.innerHTML = `<span class="wave-slot-icon">+</span>`;
         slotBtn.addEventListener("click", () => this.handleSlotClick(slotBtn));
         slotBtn.addEventListener("mouseenter", (event) => this.showTooltip(event.currentTarget));
         slotBtn.addEventListener("mouseleave", () => this.hideTooltip());
-        slots.appendChild(slotBtn);
+        slotBtn.addEventListener("dragstart", (event) => this.handleDragStart(event, slotBtn));
+        slotBtn.addEventListener("dragover", (event) => this.handleDragOver(event));
+        slotBtn.addEventListener("drop", (event) => this.handleDrop(event, slotBtn));
+        slotBtn.addEventListener("dragend", () => this.handleDragEnd(slotBtn));
+        this.refs.waveGrid.appendChild(slotBtn);
         this.waveSlotButtons.push(slotBtn);
       }
-
-      rowEl.appendChild(labelBtn);
-      rowEl.appendChild(slots);
-      this.refs.waveRows.appendChild(rowEl);
-      this.waveRowButtons.set(row.id, labelBtn);
     });
   }
 
@@ -364,13 +360,8 @@ export default class UIController {
 
     this.refs.resources.textContent = `${state.playerResources.toFixed(1)}`;
     this.refs.income.textContent = `+${state.playerIncome.toFixed(2)} /s`;
-
-    const playerRatio = state.playerCastle.maxHp > 0 ? state.playerCastle.hp / state.playerCastle.maxHp : 0;
-    const aiRatio = state.aiCastle.maxHp > 0 ? state.aiCastle.hp / state.aiCastle.maxHp : 0;
-    this.refs.playerHpFill.style.width = `${Math.max(0, Math.min(1, playerRatio)) * 100}%`;
-    this.refs.aiHpFill.style.width = `${Math.max(0, Math.min(1, aiRatio)) * 100}%`;
-    this.refs.playerHpText.textContent = `Castle: ${Math.ceil(state.playerCastle.hp)}`;
-    this.refs.aiHpText.textContent = `Enemy: ${Math.ceil(state.aiCastle.hp)}`;
+    this.refs.enemyResources.textContent = `${state.aiResources.toFixed(1)}`;
+    this.refs.enemyIncome.textContent = `+${state.aiIncome.toFixed(2)} /s`;
 
     this.refs.waveLabel.textContent = `Wave ${state.wave.number + 1}`;
     this.refs.wavePhase.textContent = state.wave.phaseLabel || PHASE_LABELS[state.wave.stageIndex] || "Phase";
@@ -383,6 +374,16 @@ export default class UIController {
     this.updateWaveBuilder(state);
     this.updateAbilities(state);
     this.updateDisabledStates(state);
+    this.updateWaveWarning(state.wave.countdown, state.isGameOver);
+  }
+
+  updateWaveWarning(countdown, isGameOver) {
+    if (!this.refs.waveWarning || !this.refs.waveWarningCount) return;
+    const remaining = Math.ceil(Math.max(0, countdown || 0));
+    const show = !isGameOver && remaining > 0 && countdown <= 5;
+    this.refs.waveWarning.classList.toggle("is-visible", show);
+    if (!show) return;
+    this.refs.waveWarningCount.textContent = `${remaining}`;
   }
 
   updateWaveRing(countdown, interval, locked) {
@@ -410,28 +411,41 @@ export default class UIController {
     const offers = state.shop.offers || [];
     this.shopCards.forEach((card, index) => {
       const id = offers[index] || null;
+      const slot = card.parentElement;
+      const placeholder = slot?.querySelector(".shop-slot-placeholder");
       const title = card.querySelector(".ui-card-title");
-      const subtitle = card.querySelector(".ui-card-subtitle");
-      const roleTag = card.querySelector(".ui-card-role");
+      const roleTag = card.querySelector(".ui-card-class");
+      const price = card.querySelector(".ui-card-price");
+      const image = card.querySelector(".ui-card-image");
 
       if (id && UNIT_TYPES[id]) {
         const unit = UNIT_TYPES[id];
+        if (placeholder) placeholder.classList.remove("is-visible");
         title.textContent = unit.name;
-        subtitle.textContent = `${ROLE_LABELS[unit.role]} | Buy ${unit.cost}`;
         roleTag.textContent = ROLE_TAGS[unit.role] || "?";
         roleTag.style.background = ROLE_COLORS[unit.role] || "#3a4150";
+        price.textContent = `${unit.cost}`;
+        if (image) {
+          image.style.backgroundImage = `linear-gradient(rgba(16, 18, 24, 0.18), rgba(16, 18, 24, 0.55)), url("${getUnitPortraitPath(unit.id)}")`;
+        }
         card.dataset.unitId = unit.id;
         card.dataset.tooltipId = unit.id;
         const enabled = state.playerResources >= unit.cost && !state.isGameOver && !state.wave.locked;
         card.classList.toggle("is-disabled", !enabled);
+        card.style.display = "";
       } else {
+        if (placeholder) placeholder.classList.add("is-visible");
         title.textContent = "No offer";
-        subtitle.textContent = "--";
         roleTag.textContent = "-";
         roleTag.style.background = "#3a4150";
+        price.textContent = "--";
+        if (image) {
+          image.style.backgroundImage = "";
+        }
         card.dataset.unitId = "";
         card.dataset.tooltipId = "";
         card.classList.add("is-disabled");
+        card.style.display = "none";
       }
     });
 
@@ -441,24 +455,12 @@ export default class UIController {
 
   updateWaveBuilder(state) {
     const draft = state.waveDraft || { front: [], mid: [], rear: [] };
-    const waveSupply = state.waveSupply || 0;
-    const interval = Math.round(state.wave.interval || 0);
     const locked = state.wave.locked;
-
-    const slotIds = [...draft.front, ...draft.mid, ...draft.rear].filter(Boolean);
-    const totalQueued = slotIds.length;
-    const lockLabel = locked ? " | Locked" : "";
-    this.refs.waveQueue.textContent = `Queue: ${totalQueued} | Supply: ${slotIds.length}/${waveSupply} | Auto ${interval}s${lockLabel}`;
-    this.refs.waveAuto.textContent = `Auto ${interval}s`;
+    const unlockedColumns = Number(state.wave?.unlockedColumns ?? 4);
 
     const currentStance = state.waveStance || "normal";
     this.stanceButtons.forEach((btn, id) => {
       btn.classList.toggle("is-active", id === currentStance);
-      btn.classList.toggle("is-disabled", locked);
-    });
-
-    this.waveRowButtons.forEach((btn, id) => {
-      btn.classList.toggle("is-active", id === this.activeSlot);
       btn.classList.toggle("is-disabled", locked);
     });
 
@@ -467,21 +469,28 @@ export default class UIController {
       const index = Number(slotBtn.dataset.index || 0);
       const list = draft[row] || [];
       const unitId = list[index];
+      const columnLocked = index >= unlockedColumns;
       const icon = slotBtn.querySelector(".wave-slot-icon");
 
       slotBtn.dataset.unitId = unitId || "";
       slotBtn.dataset.tooltipId = unitId || "";
-      slotBtn.classList.toggle("is-selected", this.activeSlot === row && this.activeSlotIndex === index);
-      slotBtn.classList.toggle("is-disabled", locked);
+      slotBtn.dataset.columnLocked = columnLocked ? "1" : "0";
+      slotBtn.classList.toggle("is-locked-column", columnLocked);
+      slotBtn.classList.toggle("is-disabled", locked || columnLocked);
+      slotBtn.draggable = Boolean(unitId) && !locked && !columnLocked;
 
       if (unitId && UNIT_TYPES[unitId]) {
         const unit = UNIT_TYPES[unitId];
-        slotBtn.style.background = unit.color;
-        icon.textContent = unit.name.charAt(0);
-        icon.style.color = "#f7f2e6";
+        slotBtn.style.backgroundColor = "#1c202a";
+        slotBtn.style.backgroundImage = `linear-gradient(rgba(12, 14, 20, 0.2), rgba(12, 14, 20, 0.55)), url("${getUnitPortraitPath(unit.id)}")`;
+        slotBtn.style.backgroundSize = "cover";
+        slotBtn.style.backgroundPosition = "center";
+        slotBtn.style.backgroundRepeat = "no-repeat";
+        icon.textContent = "";
       } else {
-        slotBtn.style.background = "#1c202a";
-        icon.textContent = "+";
+        slotBtn.style.background = columnLocked ? "#151a23" : "#1c202a";
+        slotBtn.style.backgroundImage = "";
+        icon.textContent = columnLocked ? "" : "+";
         icon.style.color = "#6f7a8c";
       }
     });
@@ -499,9 +508,7 @@ export default class UIController {
   }
 
   updateDisabledStates(state) {
-    const locked = state.wave.locked || state.isGameOver;
     this.refs.reroll.classList.toggle("is-disabled", !state.shop.canReroll);
-    this.refs.waveQueue.classList.toggle("is-locked", locked);
   }
 
   handleShopClick(card) {
@@ -509,10 +516,8 @@ export default class UIController {
     if (this.state?.isGameOver || this.state?.wave.locked) return;
     const unitId = card.dataset.unitId;
     if (!unitId) return;
-    const payload = { id: unitId, slot: this.activeSlot, fromShop: true };
-    if (this.activeSlotIndex !== null) payload.index = this.activeSlotIndex;
+    const payload = { id: unitId, fromShop: true };
     this.scene.events.emit("queue-add", payload);
-    this.activeSlotIndex = null;
   }
 
   handleReroll() {
@@ -532,37 +537,86 @@ export default class UIController {
     this.scene.events.emit("stance-select", { id });
   }
 
-  handleRowSelect(rowId) {
-    if (!this.scene || this.state?.wave.locked) return;
-    this.activeSlot = rowId;
-    this.activeSlotIndex = null;
-  }
-
   handleSlotClick(slotBtn) {
     if (!this.scene || this.state?.wave.locked) return;
+    if (slotBtn.dataset.columnLocked === "1") return;
     const row = slotBtn.dataset.row;
     const index = Number(slotBtn.dataset.index || 0);
     const unitId = slotBtn.dataset.unitId;
-
-    this.activeSlot = row;
     if (unitId) {
       this.scene.events.emit("queue-remove", { id: unitId, slot: row, index });
-      this.activeSlotIndex = null;
-    } else {
-      this.activeSlotIndex = index;
     }
+  }
+
+  handleDragStart(event, slotBtn) {
+    if (!this.scene || this.state?.wave.locked) return;
+    if (slotBtn.dataset.columnLocked === "1") {
+      event.preventDefault();
+      return;
+    }
+    const unitId = slotBtn.dataset.unitId;
+    if (!unitId) {
+      event.preventDefault();
+      return;
+    }
+    this.dragSource = {
+      row: slotBtn.dataset.row,
+      index: Number(slotBtn.dataset.index || 0)
+    };
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", `${this.dragSource.row}:${this.dragSource.index}`);
+    slotBtn.classList.add("is-dragging");
+  }
+
+  handleDragOver(event) {
+    if (!this.dragSource || this.state?.wave.locked) return;
+    if (event.currentTarget?.dataset?.columnLocked === "1") return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }
+
+  handleDrop(event, slotBtn) {
+    if (!this.scene || !this.dragSource || this.state?.wave.locked) return;
+    if (slotBtn.dataset.columnLocked === "1") return;
+    event.preventDefault();
+    const targetRow = slotBtn.dataset.row;
+    const targetIndex = Number(slotBtn.dataset.index || 0);
+    if (targetRow === this.dragSource.row && targetIndex === this.dragSource.index) return;
+    this.scene.events.emit("queue-move", {
+      from: { row: this.dragSource.row, index: this.dragSource.index },
+      to: { row: targetRow, index: targetIndex }
+    });
+    this.dragSource = null;
+  }
+
+  handleDragEnd(slotBtn) {
+    slotBtn.classList.remove("is-dragging");
+    this.dragSource = null;
   }
 
   showTooltip(target) {
     const type = target?.dataset?.tooltipType;
     if (!type) return;
-    const id = target?.dataset?.tooltipId || null;
-    const text = this.getTooltipText(type, id);
-    if (!text) return;
+    if (this.tooltipHideTimer) {
+      window.clearTimeout(this.tooltipHideTimer);
+      this.tooltipHideTimer = null;
+    }
+    this.pendingTooltipTarget = target;
+    if (this.tooltipShowTimer) window.clearTimeout(this.tooltipShowTimer);
+    this.tooltipShowTimer = window.setTimeout(() => {
+      this.tooltipShowTimer = null;
+      const currentTarget = this.pendingTooltipTarget;
+      this.pendingTooltipTarget = null;
+      const currentType = currentTarget?.dataset?.tooltipType;
+      if (!currentType) return;
+      const id = currentTarget?.dataset?.tooltipId || null;
+      const text = this.getTooltipText(currentType, id);
+      if (!text) return;
 
-    this.refs.tooltipText.textContent = text;
-    this.refs.tooltip.style.display = "block";
-    this.positionTooltip(target);
+      this.refs.tooltipText.textContent = text;
+      this.refs.tooltip.style.display = "block";
+      this.positionTooltip(currentTarget);
+    }, this.tooltipShowDelay);
   }
 
   positionTooltip(target) {
@@ -588,7 +642,16 @@ export default class UIController {
   }
 
   hideTooltip() {
-    this.refs.tooltip.style.display = "none";
+    if (this.tooltipShowTimer) {
+      window.clearTimeout(this.tooltipShowTimer);
+      this.tooltipShowTimer = null;
+    }
+    this.pendingTooltipTarget = null;
+    if (this.tooltipHideTimer) window.clearTimeout(this.tooltipHideTimer);
+    this.tooltipHideTimer = window.setTimeout(() => {
+      this.tooltipHideTimer = null;
+      this.refs.tooltip.style.display = "none";
+    }, this.tooltipHideDelay);
   }
 
   getTooltipText(type, id) {

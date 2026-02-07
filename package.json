@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "build:adept-atlas": "node scripts/build-adept-atlas-json.mjs",
     "build": "vite build",
     "preview": "vite preview"
   },

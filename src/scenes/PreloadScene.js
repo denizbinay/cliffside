@@ -1,18 +1,439 @@
 import Phaser from "phaser";
+import { UNIT_ANIMATION_ASSETS } from "../data/unitAnimationProfiles.js";
 
 export default class PreloadScene extends Phaser.Scene {
   constructor() {
     super("Preload");
   }
 
+  preload() {
+    // Environment
+    this.load.setPath("assets/environment/");
+    this.load.image("bg_sky", "bg_sky_mountains.png");
+    this.load.image("bg_mid", "bg_mid_hills.png");
+    this.load.image("bg_front", "bg_foreground_cliffs.png");
+    this.load.image("platform_stone", "platform_stone.png");
+    this.load.image("bridge_plank", "bridge_plank_segment.png");
+    this.load.image("bridge_rope", "bridge_rope_texture.png");
+    this.load.image("bridge_pillar", "bridge_pillar.png");
+
+    // Structures
+    this.load.setPath("assets/structures/");
+    this.load.image("castle_base_player", "castle_player_base.png");
+    this.load.image("castle_base_ai", "castle_ai_base.png");
+    this.load.image("castle_tower", "castle_tower_addon.png");
+    this.load.image("castle_twin_base_v1", "castle_twin_base_v1.png");
+    this.load.image("castle_twin_tower_v1", "castle_twin_tower_v1.png");
+    this.load.image("castle_twin_base_v2", "castle_twin_base_v2.png");
+    this.load.image("castle_twin_tower_v2", "castle_twin_tower_v2.png");
+    this.load.image("castle_twin_base_v3", "castle_twin_base_v3.png");
+    this.load.image("castle_twin_tower_v3", "castle_twin_tower_v3.png");
+    this.load.spritesheet("flag_anim", "flag_animated_sheet.png", {
+      frameWidth: 48,
+      frameHeight: 64
+    });
+    this.load.image("turret_base", "turret_base_stone.png");
+    this.load.image("turret_head", "turret_head_bow.png");
+    this.load.image("turret_head_raw", "turret_head_bow_raw.jpg");
+
+    // UI / Markers
+    this.load.setPath("assets/ui/");
+    this.load.image("control_rune", "control_point_rune.png");
+    this.load.image("control_glow", "control_point_glow.png");
+
+    // Units
+    this.load.setPath("assets/units/");
+    const loadedImages = new Set();
+    const loadedJson = new Set();
+    const loadedAtlases = new Set();
+    const loadedSheets = new Set();
+    Object.values(UNIT_ANIMATION_ASSETS).forEach((unitDef) => {
+      Object.values(unitDef.sheets || {}).forEach((sheetDef) => {
+        if (sheetDef.sheetKey && sheetDef.sheetFile && Number.isFinite(sheetDef.frameWidth) && Number.isFinite(sheetDef.frameHeight) && !loadedSheets.has(sheetDef.sheetKey)) {
+          this.load.spritesheet(sheetDef.sheetKey, sheetDef.sheetFile, {
+            frameWidth: sheetDef.frameWidth,
+            frameHeight: sheetDef.frameHeight
+          });
+          loadedSheets.add(sheetDef.sheetKey);
+          return;
+        }
+
+        if (sheetDef.atlasKey && sheetDef.atlasTextureFile && sheetDef.atlasDataFile && !loadedAtlases.has(sheetDef.atlasKey)) {
+          this.load.atlas(sheetDef.atlasKey, sheetDef.atlasTextureFile, sheetDef.atlasDataFile);
+          loadedAtlases.add(sheetDef.atlasKey);
+          return;
+        }
+
+        if (sheetDef.sourceKey && sheetDef.sourceFile && !loadedImages.has(sheetDef.sourceKey)) {
+          this.load.image(sheetDef.sourceKey, sheetDef.sourceFile);
+          loadedImages.add(sheetDef.sourceKey);
+        }
+        if (sheetDef.boxesKey && sheetDef.boxesFile && !loadedJson.has(sheetDef.boxesKey)) {
+          this.load.json(sheetDef.boxesKey, sheetDef.boxesFile);
+          loadedJson.add(sheetDef.boxesKey);
+        }
+      });
+    });
+  }
+
   create() {
+    this.createTurretHeadKeyedTexture();
+
+    // Create minimal placeholder texture for missing assets
     const g = this.add.graphics();
     g.fillStyle(0xffffff, 1);
     g.fillRect(0, 0, 2, 2);
     g.generateTexture("pixel", 2, 2);
     g.destroy();
 
+    // Create animations
+    this.anims.create({
+      key: "flag_wave",
+      frames: this.anims.generateFrameNumbers("flag_anim", { start: 0, end: 7 }),
+      frameRate: 8,
+      repeat: -1
+    });
+
+    this.createUnitAnimationSheets();
+    this.createUnitAnimations();
+
     this.scene.start("Game");
     this.scene.start("UI");
+  }
+
+  createTurretHeadKeyedTexture() {
+    if (!this.textures.exists("turret_head_raw")) return;
+    const sourceImage = this.textures.get("turret_head_raw").getSourceImage();
+    if (!sourceImage?.width || !sourceImage?.height) return;
+
+    const width = sourceImage.width;
+    const height = sourceImage.height;
+    const keyed = this.textures.createCanvas("turret_head_keyed", width, height);
+    if (!keyed) return;
+
+    const ctx = keyed.context;
+    ctx.clearRect(0, 0, width, height);
+    ctx.drawImage(sourceImage, 0, 0, width, height);
+
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+
+    const corners = [
+      0,
+      (width - 1) * 4,
+      (height - 1) * width * 4,
+      ((height - 1) * width + (width - 1)) * 4
+    ];
+    let keyR = 0;
+    let keyG = 0;
+    let keyB = 0;
+    for (const idx of corners) {
+      keyR += data[idx];
+      keyG += data[idx + 1];
+      keyB += data[idx + 2];
+    }
+    keyR /= corners.length;
+    keyG /= corners.length;
+    keyB /= corners.length;
+
+    const hardThreshold = 76;
+    const softThreshold = 128;
+    const greenExcessCutoff = 4;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+
+      const dr = r - keyR;
+      const dg = g - keyG;
+      const db = b - keyB;
+      const distance = Math.sqrt(dr * dr + dg * dg + db * db);
+      const greenExcess = g - Math.max(r, b);
+
+      if (distance <= hardThreshold && greenExcess > greenExcessCutoff) {
+        data[i + 3] = 0;
+        continue;
+      }
+
+      if (distance < softThreshold && greenExcess > 0) {
+        const keep = Phaser.Math.Clamp((distance - hardThreshold) / (softThreshold - hardThreshold), 0, 1);
+        data[i + 3] = Math.min(data[i + 3], Math.round(255 * keep));
+        const edgeStrength = 1 - keep;
+        if (g > r && g > b) {
+          const targetG = Math.max(r, b) + (g - Math.max(r, b)) * (1 - edgeStrength * 0.9);
+          data[i + 1] = Math.round(targetG);
+        }
+      } else if (greenExcess > 0 && data[i + 3] > 0) {
+        data[i + 1] = Math.round(g - greenExcess * 0.35);
+      }
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+    keyed.refresh();
+  }
+
+  createUnitAnimations() {
+    Object.entries(UNIT_ANIMATION_ASSETS).forEach(([unitId, unitDef]) => {
+      Object.entries(unitDef.sheets || {}).forEach(([action, sheetDef]) => {
+        const textureKey = sheetDef.outputKey || sheetDef.sheetKey || sheetDef.atlasKey;
+        if (!textureKey || !this.textures.exists(textureKey)) return;
+        const key = `${unitId}_${action}`;
+        if (this.anims.exists(key)) return;
+
+        const frames = Array.isArray(sheetDef.frameSequence)
+          ? sheetDef.frameSequence.map((frame) => ({ key: textureKey, frame: sheetDef.atlasKey ? String(frame) : frame }))
+          : sheetDef.atlasKey
+          ? this.anims.generateFrameNames(textureKey, {
+              start: sheetDef.startFrame ?? 0,
+              end: sheetDef.endFrame ?? this.getSpriteSheetFrameCount(textureKey) - 1,
+              prefix: sheetDef.framePrefix ?? "",
+              suffix: sheetDef.frameSuffix ?? ""
+            })
+          : this.anims.generateFrameNumbers(textureKey, {
+              start: sheetDef.startFrame ?? 0,
+              end: sheetDef.endFrame ?? this.getSpriteSheetFrameCount(textureKey) - 1
+            });
+
+        if (!frames?.length) return;
+
+        this.anims.create({
+          key,
+          frames,
+          frameRate: sheetDef.fps ?? 10,
+          repeat: sheetDef.repeat ?? 0,
+          yoyo: sheetDef.yoyo === true
+        });
+      });
+    });
+  }
+
+  createUnitAnimationSheets() {
+    Object.values(UNIT_ANIMATION_ASSETS).forEach((unitDef) => {
+      Object.values(unitDef.sheets || {}).forEach((sheetDef) => {
+        const sourceKey = sheetDef.sourceKey;
+        const outputKey = sheetDef.outputKey;
+        if (sheetDef.atlasKey) return;
+        if (!sourceKey || !outputKey || this.textures.exists(outputKey)) return;
+
+        if (unitDef.preprocess === "bbox-aligned-rgba") {
+          this.createAlignedSpriteSheetFromBoxes(sourceKey, sheetDef.boxesKey, outputKey);
+          return;
+        }
+
+        const frameConfig = this.getAutoSheetFrameConfig(sourceKey);
+        if (!frameConfig) return;
+        this.createKeyedSpriteSheet(sourceKey, outputKey, frameConfig);
+      });
+    });
+  }
+
+  createAlignedSpriteSheetFromBoxes(sourceKey, boxesKey, outputKey) {
+    if (!this.textures.exists(sourceKey) || this.textures.exists(outputKey)) return;
+    const rawBoxes = this.cache.json.get(boxesKey);
+    if (!Array.isArray(rawBoxes) || rawBoxes.length === 0) return;
+
+    const boxes = rawBoxes
+      .filter((entry) => Number.isFinite(entry?.x) && Number.isFinite(entry?.y) && Number.isFinite(entry?.width) && Number.isFinite(entry?.height))
+      .sort((a, b) => (a.frameIndex ?? 0) - (b.frameIndex ?? 0));
+    if (!boxes.length) return;
+
+    const sourceImage = this.textures.get(sourceKey).getSourceImage();
+    if (!sourceImage?.width || !sourceImage?.height) return;
+
+    const hasOriginalPlacement = boxes.every((box) => Number.isFinite(box.originalX) && Number.isFinite(box.originalY));
+
+    if (hasOriginalPlacement) {
+      const frameWidth = Math.max(...boxes.map((box) => Math.ceil(box.originalX + box.width)));
+      const frameHeight = Math.max(...boxes.map((box) => Math.ceil(box.originalY + box.height)));
+      const frameCount = boxes.length;
+
+      this.createPackedSpriteSheet(outputKey, frameWidth, frameHeight, frameCount, (ctx, index, frameX, frameY) => {
+        const box = boxes[index];
+        const destX = Math.round(frameX + box.originalX);
+        const destY = Math.round(frameY + box.originalY);
+        ctx.drawImage(sourceImage, box.x, box.y, box.width, box.height, destX, destY, box.width, box.height);
+      });
+      return;
+    }
+
+    const getAlignX = (box) => (Number.isFinite(box.originalX) ? box.originalX : box.x);
+    const getAlignY = (box) => (Number.isFinite(box.originalY) ? box.originalY : box.y);
+
+    const centers = boxes.map((box) => getAlignX(box) + box.width * 0.5);
+    const bottoms = boxes.map((box) => getAlignY(box) + box.height);
+    const centerRef = centers.reduce((sum, value) => sum + value, 0) / centers.length;
+    const baselineRef = Math.max(...bottoms);
+
+    const placements = boxes.map((box) => {
+      const boxCenter = getAlignX(box) + box.width * 0.5;
+      const boxBottom = getAlignY(box) + box.height;
+      const dx = centerRef - boxCenter;
+      const dy = baselineRef - boxBottom;
+      return { ...box, dx, dy };
+    });
+
+    const minX = Math.min(...placements.map((p) => p.dx));
+    const minY = Math.min(...placements.map((p) => p.dy));
+    const maxX = Math.max(...placements.map((p) => p.dx + p.width));
+    const maxY = Math.max(...placements.map((p) => p.dy + p.height));
+    const framePadding = 6;
+    const frameWidth = Math.max(1, Math.ceil(maxX - minX) + framePadding * 2);
+    const frameHeight = Math.max(1, Math.ceil(maxY - minY) + framePadding * 2);
+    const frameCount = placements.length;
+
+    this.createPackedSpriteSheet(outputKey, frameWidth, frameHeight, frameCount, (ctx, index, frameX, frameY) => {
+      const box = placements[index];
+      const destX = Math.round(frameX + (box.dx - minX) + framePadding);
+      const destY = Math.round(frameY + (box.dy - minY) + framePadding);
+      ctx.drawImage(sourceImage, box.x, box.y, box.width, box.height, destX, destY, box.width, box.height);
+    });
+  }
+
+  createPackedSpriteSheet(outputKey, frameWidth, frameHeight, frameCount, drawFrame) {
+    if (!Number.isFinite(frameWidth) || !Number.isFinite(frameHeight) || frameWidth <= 0 || frameHeight <= 0 || frameCount <= 0) return;
+
+    const maxTextureSize = Math.max(1024, this.game?.renderer?.maxTextureSize || 4096);
+    const columns = Math.max(1, Math.min(frameCount, Math.floor(maxTextureSize / frameWidth) || 1));
+    const rows = Math.ceil(frameCount / columns);
+    const sheetWidth = frameWidth * columns;
+    const sheetHeight = frameHeight * rows;
+
+    const canvasKey = `${outputKey}_canvas`;
+    const sheetCanvas = this.textures.createCanvas(canvasKey, sheetWidth, sheetHeight);
+    if (!sheetCanvas) return;
+    const ctx = sheetCanvas.context;
+    ctx.clearRect(0, 0, sheetWidth, sheetHeight);
+
+    for (let index = 0; index < frameCount; index += 1) {
+      const col = index % columns;
+      const row = Math.floor(index / columns);
+      const frameX = col * frameWidth;
+      const frameY = row * frameHeight;
+      drawFrame(ctx, index, frameX, frameY);
+    }
+
+    sheetCanvas.refresh();
+    this.textures.addSpriteSheet(outputKey, sheetCanvas.getSourceImage(), {
+      frameWidth,
+      frameHeight,
+      margin: 0,
+      spacing: 0,
+      startFrame: 0,
+      endFrame: frameCount - 1
+    });
+  }
+
+  getSpriteSheetFrameCount(textureKey) {
+    if (!this.textures.exists(textureKey)) return 0;
+    const texture = this.textures.get(textureKey);
+    if (!texture?.frames) return 0;
+    return Object.keys(texture.frames).filter((name) => name !== "__BASE").length;
+  }
+
+  getAutoSheetFrameConfig(sourceKey) {
+    if (!this.textures.exists(sourceKey)) return null;
+    const sourceImage = this.textures.get(sourceKey).getSourceImage();
+    if (!sourceImage?.width || !sourceImage?.height) return null;
+
+    const width = sourceImage.width;
+    const height = sourceImage.height;
+
+    // Breaker strips ship as a 10-frame sheet with 3px outer margin.
+    // Using 8 frames (352px each) causes visible frame overlap artifacts.
+    if (sourceKey.startsWith("breaker_") && width === 2816 && height === 329) {
+      return {
+        frameWidth: 281,
+        frameHeight: 329,
+        margin: 3,
+        spacing: 0,
+        startFrame: 0,
+        endFrame: 9
+      };
+    }
+
+    const minFrames = 4;
+    const maxFrames = 24;
+
+    let best = null;
+    for (let frames = minFrames; frames <= maxFrames; frames += 1) {
+      if (width % frames !== 0) continue;
+      const frameWidth = width / frames;
+      if (frameWidth < 96 || frameWidth > 768) continue;
+
+      const score = Math.abs(frameWidth - height);
+      if (!best || score < best.score) {
+        best = { frames, frameWidth, score };
+      }
+    }
+
+    if (!best) return null;
+
+    return {
+      frameWidth: best.frameWidth,
+      frameHeight: height,
+      margin: 0,
+      spacing: 0,
+      startFrame: 0,
+      endFrame: best.frames - 1
+    };
+  }
+
+  createKeyedSpriteSheet(sourceKey, outputKey, frameConfig) {
+    if (!this.textures.exists(sourceKey)) return;
+    if (this.textures.exists(outputKey)) return;
+
+    const sourceImage = this.textures.get(sourceKey).getSourceImage();
+    if (!sourceImage?.width || !sourceImage?.height) return;
+
+    const width = sourceImage.width;
+    const height = sourceImage.height;
+    const canvasKey = `${outputKey}_canvas`;
+    const keyedCanvas = this.textures.createCanvas(canvasKey, width, height);
+    if (!keyedCanvas) return;
+
+    const ctx = keyedCanvas.context;
+    ctx.clearRect(0, 0, width, height);
+    ctx.drawImage(sourceImage, 0, 0, width, height);
+
+    const imageData = ctx.getImageData(0, 0, width, height);
+    const data = imageData.data;
+
+    const hardThreshold = 70;
+    const softThreshold = 120;
+    const keyR = 0;
+    const keyG = 255;
+    const keyB = 0;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+
+      const dr = r - keyR;
+      const dg = g - keyG;
+      const db = b - keyB;
+      const distance = Math.sqrt(dr * dr + dg * dg + db * db);
+      const greenDominant = g > r * 1.15 && g > b * 1.15;
+
+      if (greenDominant && distance <= hardThreshold) {
+        data[i + 3] = 0;
+        continue;
+      }
+
+      if (greenDominant && distance < softThreshold) {
+        const keep = Phaser.Math.Clamp((distance - hardThreshold) / (softThreshold - hardThreshold), 0, 1);
+        data[i + 3] = Math.min(data[i + 3], Math.round(255 * keep));
+        if (data[i + 3] > 0) {
+          const excess = g - Math.max(r, b);
+          data[i + 1] = Math.max(0, Math.round(g - excess * 0.45));
+        }
+      }
+    }
+
+    ctx.putImageData(imageData, 0, 0);
+    keyedCanvas.refresh();
+
+    this.textures.addSpriteSheet(outputKey, keyedCanvas.getSourceImage(), frameConfig);
   }
 }
