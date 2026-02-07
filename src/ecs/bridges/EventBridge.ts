@@ -1,4 +1,5 @@
 import { Health, StatusEffects } from "../components";
+import { DAMAGE_TYPE } from "../../sim/DamageTypes";
 import type { GameWorld } from "../world";
 import type GameScene from "../../scenes/GameScene";
 
@@ -39,7 +40,7 @@ export class EventBridge {
 
   applyDamage(targetEid: number, amount: number): void {
     if (!targetEid || amount <= 0) return;
-    Health.current[targetEid] = Math.max(0, Health.current[targetEid] - amount);
+    this.world.sim.pipeline.applyDamage(this.world, 0, targetEid, amount, DAMAGE_TYPE.TRUE);
   }
 
   applyStatus(targetEid: number, type: StatusType, duration: number, power: number = 1): void {

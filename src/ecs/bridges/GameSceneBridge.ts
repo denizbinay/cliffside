@@ -1,4 +1,6 @@
 import { createGameWorld, resetGameWorld, updateWorldTime } from "../world";
+import { registerStandardEffectHandlers } from "../../sim/EffectHandlers";
+import { initializePipelineHooks } from "../../sim/PipelineHooks";
 import {
   createCombatSystem,
   createCleanupSystem,
@@ -15,6 +17,13 @@ import {
   createStatusDotSystem,
   createStatusSystem,
   createTargetingSystem,
+  createActiveEffectsSystem,
+  createStatModifierSystem,
+  createResourceSystem,
+  createShieldSystem,
+  createActionSystem,
+  createDisplacementSystem,
+  createVisibilitySystem,
   SystemScheduler
 } from "../systems";
 import { RenderStore } from "../stores/RenderStore";
@@ -50,6 +59,11 @@ export class GameSceneBridge {
     this.scene = scene;
     this.world = createGameWorld(options);
     this.world.scene = scene;
+
+    // Initialize simulation hooks and handlers
+    initializePipelineHooks(this.world.sim.pipeline);
+    registerStandardEffectHandlers();
+
     this.scheduler = new SystemScheduler();
     this.renderStore = new RenderStore();
     this.configStore = new ConfigStore(UNIT_TYPES);
@@ -113,9 +127,17 @@ export class GameSceneBridge {
       }
     };
 
+    this.scheduler.register("active-effects", createActiveEffectsSystem(), 5);
+    this.scheduler.register("stat-modifiers", createStatModifierSystem(), 6);
+    this.scheduler.register("resources", createResourceSystem(), 7);
+    this.scheduler.register("visibility", createVisibilitySystem(), 8);
+
     this.scheduler.register("status", createStatusSystem(), SYSTEM_PRIORITY.STATUS);
     this.scheduler.register("cooldown", createCooldownSystem(), SYSTEM_PRIORITY.MOVEMENT - 5);
     this.scheduler.register("targeting", createTargetingSystem(), SYSTEM_PRIORITY.AI);
+
+    this.scheduler.register("actions", createActionSystem(), 12);
+
     this.scheduler.register(
       "control-points",
       createControlPointSystem({
@@ -126,9 +148,14 @@ export class GameSceneBridge {
       }),
       SYSTEM_PRIORITY.HEALTH + 1
     );
+
+    this.scheduler.register("displacement", createDisplacementSystem(), SYSTEM_PRIORITY.MOVEMENT - 1);
     this.scheduler.register("movement", createMovementSystem(getCastleX), SYSTEM_PRIORITY.MOVEMENT);
-    this.scheduler.register("combat", createCombatSystem(this.configStore), SYSTEM_PRIORITY.COMBAT);
+
+    this.scheduler.register("combat", createCombatSystem(this.world, this.configStore), SYSTEM_PRIORITY.COMBAT);
     this.scheduler.register("healer", createHealerSystem(getCastleX), SYSTEM_PRIORITY.COMBAT + 5);
+
+    this.scheduler.register("shields", createShieldSystem(), SYSTEM_PRIORITY.HEALTH - 1);
     this.scheduler.register("health", createHealthSystem(), SYSTEM_PRIORITY.HEALTH);
     this.scheduler.register("cleanup", createCleanupSystem(onCleanup), SYSTEM_PRIORITY.CLEANUP);
     this.scheduler.register("sprite", createSpriteSystem(this.renderStore), SYSTEM_PRIORITY.RENDER);

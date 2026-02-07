@@ -394,6 +394,9 @@ export default class GameScene extends Phaser.Scene {
     this.matchTime += delta;
     this.economy.update(delta);
 
+    // Deterministic wave spawning
+    this.waveManager.update(delta, (type, side, opts) => this.spawnUnit(type, side, opts));
+
     this.abilityCooldowns.healWave = Math.max(0, this.abilityCooldowns.healWave - delta);
     this.abilityCooldowns.pulse = Math.max(0, this.abilityCooldowns.pulse - delta);
 
@@ -401,8 +404,8 @@ export default class GameScene extends Phaser.Scene {
     this.waveManager.waveLocked = this.waveManager.waveCountdown <= WAVE_CONFIG.lockSeconds;
     while (this.waveManager.waveCountdown <= 0) {
       this.waveManager.waveNumber += 1;
-      this.waveManager.sendWave(SIDE.PLAYER, (type, side, opts) => this.spawnUnit(type, side, opts));
-      this.waveManager.sendWave(SIDE.AI, (type, side, opts) => this.spawnUnit(type, side, opts));
+      this.waveManager.sendWave(SIDE.PLAYER);
+      this.waveManager.sendWave(SIDE.AI);
       const stageIndex = this.waveManager.getStageIndex(this.matchTime);
       this.shopManager.rollOffers(SIDE.PLAYER, stageIndex, true);
       this.shopManager.rollOffers(SIDE.AI, stageIndex, true);
@@ -828,12 +831,19 @@ export default class GameScene extends Phaser.Scene {
       onComplete: () => label.destroy()
     });
 
-    const entities = unitEntitiesQuery(this.ecsBridge.world);
+    // Use centralized pipeline
+    const world = this.ecsBridge.world;
+    const entities = unitEntitiesQuery(world);
+    const pipeline = world.sim.pipeline;
+    const castleEid = side === SIDE.PLAYER ? this.playerCastleEid : this.aiCastleEid;
+
     for (const eid of entities) {
       if (!(EntityType.value[eid] & ENTITY_TYPE.UNIT)) continue;
       if (Faction.value[eid] !== FACTION.PLAYER) continue;
       if (Health.current[eid] <= 0) continue;
-      Health.current[eid] = Math.min(Health.max[eid], Health.current[eid] + ability.amount);
+
+      // Use pipeline instead of direct mutation
+      pipeline.applyHeal(world, castleEid, eid, ability.amount);
     }
   }
 
@@ -865,7 +875,9 @@ export default class GameScene extends Phaser.Scene {
       onComplete: () => label.destroy()
     });
 
-    const entities = unitEntitiesQuery(this.ecsBridge.world);
+    const world = this.ecsBridge.world;
+    const entities = unitEntitiesQuery(world);
+
     for (const eid of entities) {
       if (!(EntityType.value[eid] & ENTITY_TYPE.UNIT)) continue;
       if (Faction.value[eid] !== FACTION.AI) continue;

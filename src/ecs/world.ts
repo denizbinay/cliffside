@@ -1,6 +1,7 @@
 import { createWorld, resetWorld } from "bitecs";
 import type { IWorld } from "bitecs";
 import { Rng } from "../sim/Rng";
+import { DamagePipeline } from "../sim/DamagePipeline";
 
 const DEFAULT_SIM_STEP_MS = 50;
 const DEFAULT_SIM_SEED = 1;
@@ -21,6 +22,7 @@ export interface GameWorld extends IWorld {
     stepMs: number;
     seed: number;
     rng: Rng;
+    pipeline: DamagePipeline;
   };
   scene: Phaser.Scene | null;
 }
@@ -44,7 +46,8 @@ export function createGameWorld(options: CreateWorldOptions = {}): GameWorld {
     tick: 0,
     stepMs,
     seed,
-    rng: new Rng(seed)
+    rng: new Rng(seed),
+    pipeline: new DamagePipeline()
   };
   world.scene = null;
   return world;
@@ -59,7 +62,8 @@ export function resetGameWorld(world: GameWorld): void {
     tick: 0,
     stepMs,
     seed,
-    rng: new Rng(seed)
+    rng: new Rng(seed),
+    pipeline: new DamagePipeline()
   };
   world.scene = null;
 }

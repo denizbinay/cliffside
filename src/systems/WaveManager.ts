@@ -31,6 +31,13 @@ interface WaveScene {
   events: { emit: (event: string, ...args: unknown[]) => void };
 }
 
+interface PendingSpawn {
+  delay: number;
+  type: string;
+  side: Side;
+  options: SpawnOptions;
+}
+
 export default class WaveManager {
   scene: WaveScene;
   waveSupply: number;
@@ -44,6 +51,7 @@ export default class WaveManager {
   playerDraft: WaveDraft;
   aiDraft: WaveDraft;
   waveStance: Record<Side, StanceId>;
+  pendingSpawns: PendingSpawn[] = [];
 
   constructor(scene: WaveScene) {
     this.scene = scene;
@@ -60,6 +68,18 @@ export default class WaveManager {
     this.aiDraft = this.createDraft();
 
     this.waveStance = { [SIDE.PLAYER]: "normal", [SIDE.AI]: "normal" } as Record<Side, StanceId>;
+  }
+
+  update(delta: number, spawnCallback: (type: string, side: Side, opts: SpawnOptions) => void): void {
+    // Process pending spawns
+    for (let i = this.pendingSpawns.length - 1; i >= 0; i--) {
+      const spawn = this.pendingSpawns[i];
+      spawn.delay -= delta;
+      if (spawn.delay <= 0) {
+        spawnCallback(spawn.type, spawn.side, spawn.options);
+        this.pendingSpawns.splice(i, 1);
+      }
+    }
   }
 
   createDraft(): WaveDraft {
@@ -272,7 +292,7 @@ export default class WaveManager {
     return true;
   }
 
-  sendWave(side: Side, spawnCallback: (type: string, side: Side, opts: SpawnOptions) => void): void {
+  sendWave(side: Side): void {
     if (this.scene.isGameOver) return;
     const draft = this.getDraft(side);
     const waveUnits = [...draft.front, ...draft.mid, ...draft.rear].filter(Boolean) as string[];
@@ -302,10 +322,14 @@ export default class WaveManager {
 
     ordered.forEach((type, index) => {
       const offset = (index - (count - 1) / 2) * spread;
-      const delay = index * this.waveStagger * 1000;
+      const delay = index * this.waveStagger; // In seconds, not ms
       const presenceMult = (roleMult[UNIT_TYPES[type]?.role || "unknown"] || 1) * stancePresence;
-      this.scene.time.delayedCall(delay, () => {
-        spawnCallback(type, side, { payCost: false, offset, presenceMult, modifiers: stanceMods });
+
+      this.pendingSpawns.push({
+        delay,
+        type,
+        side,
+        options: { payCost: false, offset, presenceMult, modifiers: stanceMods }
       });
     });
 

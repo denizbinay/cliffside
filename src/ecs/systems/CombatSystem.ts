@@ -16,19 +16,32 @@ import {
 } from "../components";
 import { COMBAT_CONFIG } from "../../config/GameConfig";
 import { ENTITY_TYPE } from "../constants";
-import type { StatusOnHit } from "../../types";
+import { DAMAGE_TYPE } from "../../sim/DamageTypes";
+import { DAMAGE_FLAGS, type DamagePipeline, type DamageContext } from "../../sim/DamagePipeline";
 import type { GameWorld } from "../world";
 import type { ConfigStore } from "../stores/ConfigStore";
-import { CombatEventBus } from "../events/CombatEventBus";
-import type { CombatEventContext } from "../events/combatEvents";
+import { emitCombat, SIM_EVENT } from "../../sim/SimEventBus";
+import type { StatusOnHit } from "../../types";
+
+// New imports
+import { getStat, STAT } from "../../sim/Stats";
+import { checkEligibility, TARGET_FLAG } from "../../sim/Targeting";
+import {
+  actionStore,
+  startAction,
+  type ActionDef,
+  ABILITY_FLAG,
+  INTERRUPT,
+  ACTION_STATE
+} from "../../sim/ActionSystem";
+import { EFFECT_KIND } from "../../sim/EffectSystem";
 
 const attackers = defineQuery([Position, Health, Combat, Faction, Target, StatusEffects, Animation, Role, EntityType]);
-
 const castles = defineQuery([Position, Health, Faction, EntityType]);
 
-export function createCombatSystem(configStore?: ConfigStore): (world: GameWorld) => GameWorld {
-  const events = new CombatEventBus();
-  registerCoreCombatHandlers(events, configStore);
+export function createCombatSystem(world: GameWorld, configStore?: ConfigStore): (world: GameWorld) => GameWorld {
+  // Register core handlers directly to the pipeline
+  registerCoreCombatHandlers(world.sim.pipeline, configStore);
 
   return function combatSystem(world: GameWorld): GameWorld {
     const entities = attackers(world);
@@ -46,46 +59,99 @@ export function createCombatSystem(configStore?: ConfigStore): (world: GameWorld
 
     for (const eid of entities) {
       if (Health.current[eid] <= 0) continue;
-      const entityType = EntityType.value[eid];
-      const isUnit = (entityType & ENTITY_TYPE.UNIT) !== 0;
-      const isTurret = (entityType & ENTITY_TYPE.TURRET) !== 0;
-      if (!isUnit && !isTurret) continue;
+      // Skip supports (healers handled elsewhere usually, or maybe they attack too?)
       if (Role.value[eid] === ROLE.SUPPORT) continue;
-      if (StatusEffects.stunTimer[eid] > 0) continue;
-      if (Combat.cooldown[eid] > 0) continue;
 
-      const buffMult = StatusEffects.buffTimer[eid] > 0 ? StatusEffects.buffPower[eid] : 1;
-      const baseDamage = Combat.damage[eid] * buffMult;
+      // ActionSystem handles cooldown checks and state, but we need to know if we can start a new one.
+      if (!actionStore.isIdle(eid)) continue;
+
       const targetEid = Target.entityId[eid];
+      let finalTargetEid = 0;
 
+      // 1. Resolve Target
       if (targetEid !== 0) {
-        const targetAlive = Health.current[targetEid] > 0;
-        const targetInRange = Math.abs(Position.x[targetEid] - Position.x[eid]) <= Combat.range[eid];
+        const range = getStat(eid, STAT.RANGE, Combat.range[eid]);
+        const eligibility = checkEligibility({
+          sourceEid: eid,
+          targetEid,
+          sourceX: Position.x[eid],
+          sourceY: Position.y[eid],
+          maxRange: range,
+          requiresVision: true,
+          isSpell: false,
+          isAttack: true,
+          ignoreFaction: false
+        });
 
-        if (targetAlive && targetInRange) {
-          resolveAttack(world, events, eid, targetEid, baseDamage);
-          Combat.cooldown[eid] = Combat.attackRate[eid];
-          Animation.currentAction[eid] = ANIM_ACTION.ATTACK;
-          continue;
+        if (eligibility.eligible) {
+          finalTargetEid = targetEid;
+        } else {
+          // Lost target
+          Target.entityId[eid] = 0;
+          Target.distance[eid] = Number.POSITIVE_INFINITY;
         }
-
-        Target.entityId[eid] = 0;
-        Target.distance[eid] = Number.POSITIVE_INFINITY;
       }
 
-      if (isUnit) {
+      // 2. Auto-target Castle if no target
+      if (finalTargetEid === 0 && EntityType.value[eid] & ENTITY_TYPE.UNIT) {
         const myFaction = Faction.value[eid];
         const enemyFaction = myFaction === FACTION.PLAYER ? FACTION.AI : FACTION.PLAYER;
         const enemyCastleEid = castleByFaction.get(enemyFaction);
         const enemyCastleX = castleXByFaction.get(enemyFaction);
 
         if (enemyCastleEid !== undefined && enemyCastleX !== undefined) {
+          // Simple range check for castle (fixed structure)
           const dist = Math.abs(enemyCastleX - Position.x[eid]);
           if (dist <= COMBAT_CONFIG.castleAttackRange) {
-            resolveAttack(world, events, eid, enemyCastleEid, baseDamage);
-            Combat.cooldown[eid] = Combat.attackRate[eid];
-            Animation.currentAction[eid] = ANIM_ACTION.ATTACK;
+            finalTargetEid = enemyCastleEid;
           }
+        }
+      }
+
+      // 3. Start Attack Action
+      if (finalTargetEid !== 0) {
+        const baseDamage = Combat.damage[eid];
+
+        // Use getStat for base stats to support Modifiers
+        // We removed the manual buffMult check because EffectHandlers now register StatModifiers for buffs
+        const damage = getStat(eid, STAT.ATTACK_DAMAGE, baseDamage);
+
+        // Attack Speed / Cooldown
+        const attackRate = Combat.attackRate[eid]; // This is "period" (seconds per attack)
+        // If we want attack speed modifiers to work, we should treat this as a stat.
+        // But Combat.attackRate is period.
+        // Let's assume STAT.ATTACK_SPEED is a multiplier (1.0 default).
+        // New Period = Base Period / Attack Speed Multiplier
+        const attackSpeedMult = getStat(eid, STAT.ATTACK_SPEED, 1.0);
+        const attackPeriod = Math.max(0.1, attackRate / attackSpeedMult);
+
+        // Define Action
+        // Windup is typically 30-50% of the attack period.
+        const windup = attackPeriod * 0.3;
+        const recovery = attackPeriod * 0.2;
+        const cooldown = attackPeriod - windup - recovery;
+
+        const attackAction: ActionDef = {
+          id: "auto_attack",
+          windup,
+          channel: 0,
+          recovery,
+          cooldown,
+          flags: ABILITY_FLAG.ATTACK,
+          interruptedBy: INTERRUPT.HARD_CC | INTERRUPT.DISARM,
+          cost: 0,
+          onRelease: [{ kind: EFFECT_KIND.DAMAGE_FLAT, value: damage }]
+        };
+
+        const result = startAction(eid, attackAction, finalTargetEid, world.sim.tick);
+
+        if (result.success) {
+          // Animation sync
+          Animation.currentAction[eid] = ANIM_ACTION.ATTACK;
+          // We don't need emitCombat(ATTACK_START) here because ActionSystemECS emits CAST_START?
+          // ActionSystem emits CAST_START. UI should map CAST_START(id="auto_attack") to animation.
+          // But for backward compat with existing UI that listens for ATTACK_START:
+          emitCombat(world, SIM_EVENT.ATTACK_START, eid, finalTargetEid);
         }
       }
     }
@@ -94,83 +160,55 @@ export function createCombatSystem(configStore?: ConfigStore): (world: GameWorld
   };
 }
 
-function resolveAttack(
-  world: GameWorld,
-  events: CombatEventBus,
-  attackerEid: number,
-  targetEid: number,
-  baseDamage: number
-): void {
-  const context: CombatEventContext = {
-    world,
-    attackerEid,
-    targetEid,
-    baseDamage,
-    damage: baseDamage,
-    isCritical: false,
-    didKill: false
-  };
-
-  events.emit("beforeAttack", context);
-
-  const previousHp = Health.current[targetEid];
-  const finalDamage = Math.max(0, context.damage);
-  Health.current[targetEid] = Math.max(0, previousHp - finalDamage);
-  context.damage = finalDamage;
-  context.didKill = previousHp > 0 && Health.current[targetEid] <= 0;
-
-  events.emit("afterDamage", context);
-  events.emit("onHit", context);
-  if (context.didKill) {
-    events.emit("onKill", context);
-  }
-}
-
-function registerCoreCombatHandlers(events: CombatEventBus, configStore?: ConfigStore): void {
-  events.on("beforeAttack", (context) => {
+// Keep registerCoreCombatHandlers mostly as is, but remove resolveAttack since it's now handled by the pipeline/action
+function registerCoreCombatHandlers(pipeline: DamagePipeline, configStore?: ConfigStore): void {
+  // 1. Critical Strike (Pre-Mitigation)
+  pipeline.onDamage("preMitigation", (ctx) => {
     if (!configStore) return;
-    const config = getAttackerConfig(context.world, context.attackerEid, configStore);
+    const config = getAttackerConfig(ctx.world, ctx.sourceEid, configStore);
     if (!config?.critChance) return;
-    const roll = context.world.sim.rng.nextFloat();
-    if (roll > config.critChance) return;
 
-    const multiplier = config.critMultiplier ?? 1.5;
-    context.isCritical = true;
-    context.damage = context.damage * multiplier;
+    // Check RNG
+    const roll = ctx.world.sim.rng.nextFloat();
+    if (roll <= config.critChance) {
+      const multiplier = config.critMultiplier ?? 1.5;
+      ctx.amount *= multiplier;
+      ctx.flags |= DAMAGE_FLAGS.CRIT;
+    }
   });
 
-  events.on("onHit", (context) => {
+  // 2. On-Hit Status Effects (Post-Damage)
+  pipeline.onDamage("postDamage", (ctx) => {
     if (!configStore) return;
-    applyStatusOnHit(context.world, context.attackerEid, context.targetEid, configStore);
+    if (!(EntityType.value[ctx.targetEid] & ENTITY_TYPE.UNIT)) return;
+
+    applyStatusOnHit(ctx.world, ctx.sourceEid, ctx.targetEid, configStore);
   });
 
-  events.on("onKill", (context) => {
+  // 3. On-Kill Buffs (On-Kill)
+  pipeline.onDamage("onKill", (ctx) => {
     if (!configStore) return;
-    const config = getAttackerConfig(context.world, context.attackerEid, configStore);
+    const config = getAttackerConfig(ctx.world, ctx.sourceEid, configStore);
     const onKill = config?.onKill;
     if (!onKill || onKill.type !== "selfBuff") return;
 
-    StatusEffects.buffTimer[context.attackerEid] = Math.max(
-      StatusEffects.buffTimer[context.attackerEid],
-      onKill.duration
-    );
-    StatusEffects.buffPower[context.attackerEid] = Math.max(StatusEffects.buffPower[context.attackerEid], onKill.power);
+    StatusEffects.buffTimer[ctx.sourceEid] = Math.max(StatusEffects.buffTimer[ctx.sourceEid], onKill.duration);
+    StatusEffects.buffPower[ctx.sourceEid] = Math.max(StatusEffects.buffPower[ctx.sourceEid], onKill.power);
   });
-}
-
-function applyStatusOnHit(world: GameWorld, attackerEid: number, targetEid: number, configStore?: ConfigStore): void {
-  if (!configStore) return;
-  if (!(EntityType.value[targetEid] & ENTITY_TYPE.UNIT)) return;
-  const config = getAttackerConfig(world, attackerEid, configStore);
-  const status = config?.statusOnHit;
-  if (!status) return;
-
-  applyStatusEffect(attackerEid, targetEid, status);
 }
 
 function getAttackerConfig(world: GameWorld, attackerEid: number, configStore: ConfigStore) {
   if (!hasComponent(world, UnitConfig, attackerEid)) return null;
   return configStore.getUnitConfigByIndex(UnitConfig.typeIndex[attackerEid]);
+}
+
+function applyStatusOnHit(world: GameWorld, attackerEid: number, targetEid: number, configStore?: ConfigStore): void {
+  if (!configStore) return;
+  const config = getAttackerConfig(world, attackerEid, configStore);
+  const status = config?.statusOnHit;
+  if (!status) return;
+
+  applyStatusEffect(attackerEid, targetEid, status);
 }
 
 function applyStatusEffect(attackerEid: number, targetEid: number, status: StatusOnHit): void {

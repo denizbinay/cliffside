@@ -79,7 +79,7 @@ export function createHealerSystem(
         if (Combat.cooldown[eid] === 0) {
           const buffMult = StatusEffects.buffTimer[eid] > 0 ? StatusEffects.buffPower[eid] : 1;
           const healAmount = Combat.healAmount[eid] * buffMult;
-          Health.current[bestEid] = Math.min(Health.max[bestEid], Health.current[bestEid] + healAmount);
+          world.sim.pipeline.applyHeal(world, eid, bestEid, healAmount, ["support"]);
           Combat.cooldown[eid] = Combat.attackRate[eid];
           Animation.currentAction[eid] = ANIM_ACTION.ATTACK;
         }

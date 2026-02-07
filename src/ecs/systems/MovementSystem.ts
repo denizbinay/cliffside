@@ -15,6 +15,7 @@ import {
 } from "../components";
 import { ENTITY_TYPE } from "../constants";
 import type { GameWorld } from "../world";
+import { isDisplaced, isDashing, setLaneMovement, tickMovement, MOVE_TYPE } from "../../sim/Movement";
 
 const movableUnits = defineQuery([
   Position,
@@ -40,6 +41,11 @@ export function createMovementSystem(
       if (!(EntityType.value[eid] & ENTITY_TYPE.UNIT)) continue;
       if (Health.current[eid] <= 0) continue;
       if (Role.value[eid] === ROLE.SUPPORT) continue;
+
+      // If displaced or dashing, let DisplacementSystem handle it
+      // actually, we can try to set lane movement, and if it fails (due to priority), we do nothing
+      // this way we respect the priority system centrally
+
       if (StatusEffects.stunTimer[eid] > 0) continue;
       if (Target.entityId[eid] !== 0) continue;
 
@@ -56,13 +62,18 @@ export function createMovementSystem(
       const direction = myFaction === FACTION.PLAYER ? 1 : -1;
       const stopX = enemyCastleX + (direction === 1 ? -castleStopOffset : castleStopOffset);
 
-      Position.x[eid] += direction * speed * delta;
+      // Set intent (will fail if knocked back/dashing due to priority)
+      const intent = setLaneMovement(eid, stopX, speed);
 
-      if ((direction === 1 && Position.x[eid] > stopX) || (direction === -1 && Position.x[eid] < stopX)) {
-        Position.x[eid] = stopX;
+      // Only process if we successfully set/kept lane intent
+      if (intent.type === MOVE_TYPE.LANE) {
+        // Update intent parameters in case they changed (slows, target moved)
+        intent.speed = speed;
+        intent.targetX = stopX;
+
+        tickMovement(eid, delta);
+        Animation.currentAction[eid] = ANIM_ACTION.RUN;
       }
-
-      Animation.currentAction[eid] = ANIM_ACTION.RUN;
     }
 
     return world;
