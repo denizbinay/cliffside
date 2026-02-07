@@ -28,7 +28,6 @@ const ALL_UNIT_IDS = [
   "cleric",
   "minstrel",
   "warder",
-  "sage",
   "oracle",
   "saboteur",
   "hammerer",

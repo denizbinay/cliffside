@@ -15,7 +15,6 @@ import { clericConfig } from "./units/cleric";
 import { minstrelConfig } from "./units/minstrel";
 import { adeptConfig } from "./units/adept";
 import { warderConfig } from "./units/warder";
-import { sageConfig } from "./units/sage";
 import { oracleConfig } from "./units/oracle";
 import { saboteurConfig } from "./units/saboteur";
 import { hammererConfig } from "./units/hammerer";
@@ -38,7 +37,6 @@ export const UNIT_TYPES: UnitTypesMap = {
   minstrel: minstrelConfig,
   adept: adeptConfig,
   warder: warderConfig,
-  sage: sageConfig,
   oracle: oracleConfig,
   saboteur: saboteurConfig,
   hammerer: hammererConfig,
