@@ -5,6 +5,7 @@
 
 import type {
   SideConstants,
+  CastleMode,
   CastleVariant,
   CastleMetrics,
   CastleConfig,
@@ -23,24 +24,28 @@ export const SIDE: SideConstants = {
   AI: "ai"
 };
 
+/**
+ * Castle display mode:
+ * - "unified": Single castle asset (castle.png) used for both sides, flipped for AI
+ * - "legacy": Separate assets per side with variant support
+ */
+export const CASTLE_MODE: CastleMode = "unified";
+
 export const CASTLE_VARIANTS: readonly CastleVariant[] = [
   {
     id: "v1",
     label: "Twin V1",
-    baseKey: "castle_twin_base_v1",
-    towerKey: "castle_twin_tower_v1"
+    baseKey: "castle_twin_base_v1"
   },
   {
     id: "v2",
     label: "Twin V2",
-    baseKey: "castle_twin_base_v2",
-    towerKey: "castle_twin_tower_v2"
+    baseKey: "castle_twin_base_v2"
   },
   {
     id: "v3",
     label: "Twin V3",
-    baseKey: "castle_twin_base_v3",
-    towerKey: "castle_twin_tower_v3"
+    baseKey: "castle_twin_base_v3"
   }
 ];
 

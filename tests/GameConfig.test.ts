@@ -23,7 +23,6 @@ describe("GameConfig", () => {
     for (const variant of CASTLE_VARIANTS) {
       expect(variant.id).toBeTruthy();
       expect(variant.baseKey).toBeTruthy();
-      expect(variant.towerKey).toBeTruthy();
     }
   });
 

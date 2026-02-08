@@ -43,20 +43,14 @@ export default class PreloadScene extends Phaser.Scene {
 
     // Structures
     this.load.setPath("assets/structures/");
+    // Legacy castle assets (kept for fallback)
     this.load.image("castle_base_player", "castle_player_base.png");
-    this.load.image("castle_base_ai", "castle_ai_base.png");
-    this.load.image("castle_tower", "castle_tower_addon.png");
     this.load.image("castle_twin_base_v1", "castle_twin_base_v1.png");
-    this.load.image("castle_twin_tower_v1", "castle_twin_tower_v1.png");
     this.load.image("castle_twin_base_v2", "castle_twin_base_v2.png");
-    this.load.image("castle_twin_tower_v2", "castle_twin_tower_v2.png");
     this.load.image("castle_twin_base_v3", "castle_twin_base_v3.png");
-    this.load.image("castle_twin_tower_v3", "castle_twin_tower_v3.png");
-    this.load.spritesheet("flag_anim", "flag_animated_sheet.png", {
-      frameWidth: 48,
-      frameHeight: 64
-    });
-    this.load.image("turret_base", "turret_base_stone.png");
+    // New unified castle (same asset for both sides, flipped for AI)
+    this.load.image("castle_unified", "castle.png");
+    // Turret
     this.load.image("turret_head", "turret_head_bow.png");
     this.load.image("turret_head_raw", "turret_head_bow_raw.jpg");
 
@@ -191,14 +185,6 @@ export default class PreloadScene extends Phaser.Scene {
     g.fillRect(0, 0, 2, 2);
     g.generateTexture("pixel", 2, 2);
     g.destroy();
-
-    // Create animations
-    this.anims.create({
-      key: "flag_wave",
-      frames: this.anims.generateFrameNumbers("flag_anim", { start: 0, end: 7 }),
-      frameRate: 8,
-      repeat: -1
-    });
 
     this.createUnitAnimationSheets();
     this.createUnitAnimations();

@@ -55,13 +55,14 @@ export interface UnitTypeConfig {
 
 export type UnitTypesMap = Record<string, UnitTypeConfig>;
 
-// --- Castle Variants ---
+// --- Castle Mode ---
+
+export type CastleMode = "legacy" | "unified";
 
 export interface CastleVariant {
   readonly id: string;
   readonly label: string;
   readonly baseKey: string;
-  readonly towerKey: string;
 }
 
 // --- Config Blocks ---

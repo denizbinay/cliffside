@@ -1,12 +1,11 @@
 import { Position, Render } from "../components";
 import type { RenderStore } from "../stores/RenderStore";
-import type { LayoutProfile, Side } from "../../types";
+import type { CastleMode, LayoutProfile, Side } from "../../types";
 import type { RenderStoreEntry, StatusDotsContainer } from "../stores/RenderStore";
 
 interface CastleVariantInfo {
   useTwinMirror: boolean;
   baseKey: string;
-  towerKey: string;
   label: string;
 }
 
@@ -17,6 +16,7 @@ export interface CreateCastleVisualsOptions {
   layoutProfile: LayoutProfile;
   baseColor: number;
   renderStore: RenderStore;
+  castleMode: CastleMode;
   getCastleVariant: () => CastleVariantInfo;
 }
 
@@ -28,15 +28,20 @@ function createEmptyStatusDots(scene: Phaser.Scene): StatusDotsContainer {
 }
 
 export function createCastleVisuals(options: CreateCastleVisualsOptions): number {
-  const { scene, eid, side, layoutProfile, baseColor, renderStore, getCastleVariant } = options;
+  const { scene, eid, side, layoutProfile, baseColor, renderStore, castleMode, getCastleVariant } = options;
   const x = Position.x[eid];
   const y = Position.y[eid];
   const castleVariant = getCastleVariant();
-  const castleKey = castleVariant.useTwinMirror
-    ? castleVariant.baseKey
-    : side === "player"
-      ? "castle_base_player"
-      : "castle_base_ai";
+
+  // Determine which texture to use based on castle mode
+  let castleKey: string;
+  if (castleMode === "unified") {
+    // New unified mode: same asset for both sides
+    castleKey = "castle_unified";
+  } else {
+    // Legacy mode: variant base or fallback to player base
+    castleKey = castleVariant.useTwinMirror ? castleVariant.baseKey : "castle_base_player";
+  }
   const hasCastleBase = scene.textures.exists(castleKey);
 
   const baseCenterYOffset = layoutProfile.castle.baseCenterYOffset;

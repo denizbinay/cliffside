@@ -3,6 +3,7 @@ import { UNIT_TYPES } from "../data/units";
 import { ABILITIES } from "../data/abilities";
 import {
   SIDE,
+  CASTLE_MODE,
   CASTLE_VARIANTS,
   CASTLE_METRICS,
   CASTLE_CONFIG,
@@ -349,14 +350,12 @@ export default class GameScene extends Phaser.Scene {
     return 0;
   }
 
-  getCastleVariant(): { label: string; baseKey: string; towerKey: string; useTwinMirror: boolean } {
+  getCastleVariant(): { label: string; baseKey: string; useTwinMirror: boolean } {
     const variant = this.castleVariants[this.castleVariantIndex] || this.castleVariants[0];
     const hasVariantBase = variant && this.textures.exists(variant.baseKey);
-    const hasVariantTower = variant && this.textures.exists(variant.towerKey);
     return {
       label: hasVariantBase ? variant.label : "Legacy",
       baseKey: hasVariantBase ? variant.baseKey : "castle_base_player",
-      towerKey: hasVariantTower ? variant.towerKey : "castle_tower",
       useTwinMirror: hasVariantBase
     };
   }
@@ -649,6 +648,7 @@ export default class GameScene extends Phaser.Scene {
       layoutProfile: this.layoutProfile,
       baseColor: 0x5f7685,
       renderStore: this.ecsBridge.renderStore,
+      castleMode: CASTLE_MODE,
       getCastleVariant: () => this.getCastleVariant()
     });
 
@@ -664,6 +664,7 @@ export default class GameScene extends Phaser.Scene {
       layoutProfile: this.layoutProfile,
       baseColor: 0x8a5a5a,
       renderStore: this.ecsBridge.renderStore,
+      castleMode: CASTLE_MODE,
       getCastleVariant: () => this.getCastleVariant()
     });
 
