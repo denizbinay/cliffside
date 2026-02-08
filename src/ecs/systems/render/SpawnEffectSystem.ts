@@ -24,6 +24,9 @@ export function createSpawnEffectSystem(renderStore: RenderStore): (world: GameW
 
       spawned.add(eid);
 
+      // Spawn animation temporarily disabled to prevent castle pop-in
+      // Re-enable or customize for specific unit types if needed
+      /*
       const container = renderData.container;
       container.setAlpha(0);
       if (container.setScale) {
@@ -44,6 +47,7 @@ export function createSpawnEffectSystem(renderStore: RenderStore): (world: GameW
           container.setScale(1);
         }
       }
+      */
     }
 
     return world;
