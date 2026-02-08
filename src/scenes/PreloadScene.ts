@@ -273,75 +273,38 @@ export default class PreloadScene extends Phaser.Scene {
     if (!Array.isArray(rawBoxes) || rawBoxes.length === 0) return;
 
     interface BoxEntry {
-      x: number;
-      y: number;
-      width: number;
-      height: number;
       frameIndex?: number;
-      originalX?: number;
-      originalY?: number;
+      row?: number;
+      col?: number;
     }
 
+    // Sort boxes by frameIndex to get correct frame ordering
     const boxes: BoxEntry[] = rawBoxes
-      .filter(
-        (entry: BoxEntry) =>
-          Number.isFinite(entry?.x) &&
-          Number.isFinite(entry?.y) &&
-          Number.isFinite(entry?.width) &&
-          Number.isFinite(entry?.height)
-      )
+      .filter((entry: BoxEntry) => Number.isFinite(entry?.frameIndex))
       .sort((a: BoxEntry, b: BoxEntry) => (a.frameIndex ?? 0) - (b.frameIndex ?? 0));
     if (!boxes.length) return;
 
     const sourceImage = this.textures.get(sourceKey).getSourceImage() as HTMLImageElement;
     if (!sourceImage?.width || !sourceImage?.height) return;
 
-    const hasOriginalPlacement = boxes.every((box) => Number.isFinite(box.originalX) && Number.isFinite(box.originalY));
+    // Fixed grid layout: 4 columns x 7 rows, 768x448 per frame
+    // These sprite sheets always have this structure with alpha transparency
+    const GRID_COLS = 4;
+    const FRAME_WIDTH = 768;
+    const FRAME_HEIGHT = Math.floor(sourceImage.height / 7); // Calculate from actual height
 
-    if (hasOriginalPlacement) {
-      const frameWidth = Math.max(...boxes.map((box) => Math.ceil(box.originalX! + box.width)));
-      const frameHeight = Math.max(...boxes.map((box) => Math.ceil(box.originalY! + box.height)));
-      const frameCount = boxes.length;
+    const frameCount = boxes.length;
 
-      this.createPackedSpriteSheet(outputKey, frameWidth, frameHeight, frameCount, (ctx, index, frameX, frameY) => {
-        const box = boxes[index];
-        const destX = Math.round(frameX + box.originalX!);
-        const destY = Math.round(frameY + box.originalY!);
-        ctx.drawImage(sourceImage, box.x, box.y, box.width, box.height, destX, destY, box.width, box.height);
-      });
-      return;
-    }
+    // Extract full frame cells from the grid - alpha channel handles transparency
+    this.createPackedSpriteSheet(outputKey, FRAME_WIDTH, FRAME_HEIGHT, frameCount, (ctx, index, destX, destY) => {
+      const box = boxes[index];
+      const col = box.col ?? index % GRID_COLS;
+      const row = box.row ?? Math.floor(index / GRID_COLS);
 
-    const getAlignX = (box: BoxEntry): number => (Number.isFinite(box.originalX) ? box.originalX! : box.x);
-    const getAlignY = (box: BoxEntry): number => (Number.isFinite(box.originalY) ? box.originalY! : box.y);
+      const srcX = col * FRAME_WIDTH;
+      const srcY = row * FRAME_HEIGHT;
 
-    const centers = boxes.map((box) => getAlignX(box) + box.width * 0.5);
-    const bottoms = boxes.map((box) => getAlignY(box) + box.height);
-    const centerRef = centers.reduce((sum, value) => sum + value, 0) / centers.length;
-    const baselineRef = Math.max(...bottoms);
-
-    const placements = boxes.map((box) => {
-      const boxCenter = getAlignX(box) + box.width * 0.5;
-      const boxBottom = getAlignY(box) + box.height;
-      const dx = centerRef - boxCenter;
-      const dy = baselineRef - boxBottom;
-      return { ...box, dx, dy };
-    });
-
-    const minX = Math.min(...placements.map((p) => p.dx));
-    const minY = Math.min(...placements.map((p) => p.dy));
-    const maxX = Math.max(...placements.map((p) => p.dx + p.width));
-    const maxY = Math.max(...placements.map((p) => p.dy + p.height));
-    const framePadding = 6;
-    const frameWidth = Math.max(1, Math.ceil(maxX - minX) + framePadding * 2);
-    const frameHeight = Math.max(1, Math.ceil(maxY - minY) + framePadding * 2);
-    const frameCount = placements.length;
-
-    this.createPackedSpriteSheet(outputKey, frameWidth, frameHeight, frameCount, (ctx, index, frameX, frameY) => {
-      const box = placements[index];
-      const destX = Math.round(frameX + (box.dx - minX) + framePadding);
-      const destY = Math.round(frameY + (box.dy - minY) + framePadding);
-      ctx.drawImage(sourceImage, box.x, box.y, box.width, box.height, destX, destY, box.width, box.height);
+      ctx.drawImage(sourceImage, srcX, srcY, FRAME_WIDTH, FRAME_HEIGHT, destX, destY, FRAME_WIDTH, FRAME_HEIGHT);
     });
   }
 

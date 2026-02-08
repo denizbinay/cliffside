@@ -1,17 +1,8 @@
 import type { UnitAnimationAsset, UnitAnimationProfile } from "../types";
 
-import { adeptAnimAsset, adeptAnimProfile } from "./units/adept";
-import { arbalistAnimAsset, arbalistAnimProfile } from "./units/arbalist";
+export const UNIT_ANIMATION_ASSETS: Record<string, UnitAnimationAsset> = {};
 
-export const UNIT_ANIMATION_ASSETS: Record<string, UnitAnimationAsset> = {
-  adept: adeptAnimAsset,
-  arbalist: arbalistAnimAsset
-};
-
-export const UNIT_ANIMATION_PROFILES: Record<string, UnitAnimationProfile> = {
-  adept: adeptAnimProfile,
-  arbalist: arbalistAnimProfile
-};
+export const UNIT_ANIMATION_PROFILES: Record<string, UnitAnimationProfile> = {};
 
 const ALL_UNIT_IDS = [
   "guard",
@@ -31,7 +22,9 @@ const ALL_UNIT_IDS = [
   "oracle",
   "saboteur",
   "hammerer",
-  "lancer"
+  "lancer",
+  "adept",
+  "arbalist"
 ];
 
 ALL_UNIT_IDS.forEach((id) => {
