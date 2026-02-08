@@ -428,17 +428,28 @@ export default class GameScene extends Phaser.Scene {
   // --- Background & Bridge ---
 
   createBackground(): void {
-    const hasBgSky = this.textures.exists("bg_sky");
+    const hasBgSky = this.textures.exists("env_skybox");
 
     this.add.rectangle(this.width / 2, this.height / 2, this.width, this.height, 0x151922).setDepth(DEPTH.SKYBOX);
 
     const sky = hasBgSky
-      ? this.add.image(this.width / 2, this.height / 2, "bg_sky")
+      ? this.add.image(this.width / 2, this.height / 2, "env_skybox")
       : this.add.rectangle(this.width / 2, this.height / 2, this.width, this.height, 0x273145);
+
     if (hasBgSky) {
-      const frame = this.textures.get("bg_sky").getSourceImage() as HTMLImageElement;
-      const scale = Math.max((this.width + 8) / frame.width, (this.height + 8) / frame.height);
-      (sky as Phaser.GameObjects.Image).setScale(scale);
+      const frame = this.textures.get("env_skybox").getSourceImage() as HTMLImageElement;
+      const width = frame.width;
+      const height = frame.height;
+
+      const screenAspect = this.width / this.height;
+      const imageAspect = width / height;
+
+      // Calculate "cover" scale
+      const scaleX = (this.width + 2) / width;
+      const scaleY = (this.height + 2) / height;
+      const scale = Math.max(scaleX, scaleY);
+
+      (sky as Phaser.GameObjects.Image).setScale(scale).setOrigin(0.5, 0.5);
     }
     sky.setDepth(DEPTH.BACKGROUND);
 
@@ -465,43 +476,9 @@ export default class GameScene extends Phaser.Scene {
     const bridgeWidth = this.bridgeRight - this.bridgeLeft;
     const bridgeCenter = this.playArea.x + this.playArea.width / 2;
 
-    const hasPlatform = this.textures.exists("platform_stone");
     const hasBridgePlank = this.textures.exists("bridge_plank");
     const hasBridgePillar = this.textures.exists("bridge_pillar");
     const hasBridgeRope = this.textures.exists("bridge_rope");
-
-    this.drawDeckSegment(
-      this.boardLayout.leftFoundationStart,
-      this.boardLayout.leftFoundationEnd,
-      this.foundationDeckY,
-      this.foundationDeckHeight,
-      DEPTH.PLATFORMS,
-      hasPlatform
-    );
-    this.drawDeckSegment(
-      this.boardLayout.rightFoundationStart,
-      this.boardLayout.rightFoundationEnd,
-      this.foundationDeckY,
-      this.foundationDeckHeight,
-      DEPTH.PLATFORMS,
-      hasPlatform
-    );
-    this.drawDeckSegment(
-      this.platformLeftStart,
-      this.platformLeftEnd,
-      this.spawnDeckY,
-      this.spawnDeckHeight,
-      DEPTH.PLATFORMS + 1,
-      hasPlatform
-    );
-    this.drawDeckSegment(
-      this.platformRightStart,
-      this.platformRightEnd,
-      this.spawnDeckY,
-      this.spawnDeckHeight,
-      DEPTH.PLATFORMS + 1,
-      hasPlatform
-    );
 
     if (hasBridgePlank) {
       const segmentCount = 6;
@@ -1295,31 +1272,6 @@ export default class GameScene extends Phaser.Scene {
       bridgeLeft: profile.decks.spawn.leftEnd,
       bridgeRight: profile.decks.spawn.rightStart
     };
-  }
-
-  drawDeckSegment(
-    startX: number,
-    endX: number,
-    topY: number,
-    height: number,
-    depth: number,
-    hasPlatformTexture: boolean
-  ): void {
-    const width = endX - startX;
-    const centerX = (startX + endX) / 2;
-    const centerY = topY + height / 2;
-    if (hasPlatformTexture) {
-      this.addBridgeVisual(
-        this.add
-          .image(centerX, centerY, "platform_stone")
-          .setDisplaySize(width + 16, height)
-          .setDepth(depth)
-      );
-      return;
-    }
-    this.addBridgeVisual(
-      this.add.rectangle(centerX, centerY, width, height, 0x3a3430).setStrokeStyle(2, 0x241b18, 1).setDepth(depth)
-    );
   }
 
   loadLayoutProfile(): void {

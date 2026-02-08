@@ -33,13 +33,8 @@ export default class PreloadScene extends Phaser.Scene {
 
     // Environment
     this.load.setPath("assets/environment/");
-    this.load.image("bg_sky", "bg_sky_mountains.png");
-    this.load.image("bg_mid", "bg_mid_hills.png");
-    this.load.image("bg_front", "bg_foreground_cliffs.png");
+    this.load.image("env_skybox", "skybox.jpg");
     this.load.image("platform_stone", "platform_stone.png");
-    this.load.image("bridge_plank", "bridge_plank_segment.png");
-    this.load.image("bridge_rope", "bridge_rope_texture.png");
-    this.load.image("bridge_pillar", "bridge_pillar.png");
 
     // Structures
     this.load.setPath("assets/structures/");

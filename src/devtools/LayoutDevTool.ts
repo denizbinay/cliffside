@@ -302,62 +302,21 @@ export default class LayoutDevTool {
     );
 
     makeHandle(
-      "foundation-left-start",
-      "Found L",
-      0x9aa7ba,
-      () => ({ x: profile.decks.foundation.leftStart, y: profile.decks.foundation.topY }),
-      (x, y) => {
-        profile.decks.foundation.leftStart = x;
-        profile.decks.foundation.topY = y;
-      },
-      (dy) => {
-        profile.decks.foundation.height = Phaser.Math.Clamp(
-          profile.decks.foundation.height + (dy > 0 ? -2 : 2),
-          30,
-          160
-        );
-      }
-    );
-
-    makeHandle(
-      "foundation-left-end",
-      "Found R",
-      0x9aa7ba,
-      () => ({ x: profile.decks.foundation.leftEnd, y: profile.decks.foundation.topY }),
-      (x, y) => {
-        profile.decks.foundation.leftEnd = Math.max(x, profile.decks.foundation.leftStart + 20);
-        profile.decks.foundation.topY = y;
-      }
-    );
-
-    makeHandle(
       "spawn-left-start",
-      "Spawn L",
+      "Lane Start",
       0xd9bf8b,
       () => ({ x: profile.decks.spawn.leftStart, y: profile.decks.spawn.topY }),
       (x, y) => {
         profile.decks.spawn.leftStart = x;
         profile.decks.spawn.topY = y;
       },
-      (dy) => {
-        profile.decks.spawn.height = Phaser.Math.Clamp(profile.decks.spawn.height + (dy > 0 ? -2 : 2), 24, 140);
-      }
-    );
-
-    makeHandle(
-      "spawn-left-end",
-      "Spawn R",
-      0xd9bf8b,
-      () => ({ x: profile.decks.spawn.leftEnd, y: profile.decks.spawn.topY }),
-      (x, y) => {
-        profile.decks.spawn.leftEnd = Math.max(x, profile.decks.spawn.leftStart + 20);
-        profile.decks.spawn.topY = y;
-      }
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      () => {}
     );
 
     makeHandle(
       "bridge-left",
-      "Bridge L",
+      "Bridge Start",
       0xb6c6a2,
       () => ({ x: profile.decks.spawn.leftEnd, y: profile.bridge.topY }),
       (x, y) => {
