@@ -13,7 +13,7 @@ export const archerConfig: UnitTypeConfig = {
     hp: 90,
     dmg: 18,
     range: 150,
-    speed: 8,
+    speed: 12,
     attackRate: 1.0,
     cost: 4,
     presence: 0.8,

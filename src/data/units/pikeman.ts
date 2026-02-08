@@ -13,7 +13,7 @@ export const pikemanConfig: UnitTypeConfig = {
     hp: 150,
     dmg: 18,
     range: 46,
-    speed: 34,
+    speed: 18,
     attackRate: 1.15,
     cost: 4,
     presence: 1.0,

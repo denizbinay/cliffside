@@ -13,7 +13,7 @@ export const minstrelConfig: UnitTypeConfig = {
     hp: 90,
     dmg: 0,
     range: 100,
-    speed: 40,
+    speed: 8,
     attackRate: 0.8,
     cost: 3,
     presence: 0.6,

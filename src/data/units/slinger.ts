@@ -13,7 +13,7 @@ export const slingerConfig: UnitTypeConfig = {
     hp: 70,
     dmg: 12,
     range: 110,
-    speed: 42,
+    speed: 20,
     attackRate: 0.75,
     cost: 2,
     presence: 0.6,

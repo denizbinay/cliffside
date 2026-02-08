@@ -13,7 +13,7 @@ export const guardConfig: UnitTypeConfig = {
     hp: 180,
     dmg: 14,
     range: 28,
-    speed: 32,
+    speed: 15,
     attackRate: 1.1,
     cost: 3,
     presence: 1.2,

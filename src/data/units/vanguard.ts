@@ -13,7 +13,7 @@ export const vanguardConfig: UnitTypeConfig = {
     hp: 140,
     dmg: 20,
     range: 28,
-    speed: 40,
+    speed: 8,
     attackRate: 0.95,
     cost: 5,
     presence: 1.0,

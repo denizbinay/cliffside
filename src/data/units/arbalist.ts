@@ -13,7 +13,7 @@ export const arbalistConfig: UnitTypeConfig = {
   hp: 100,
   dmg: 34,
   range: 200,
-  speed: 30,
+  speed: 10,
   attackRate: 1.8,
   cost: 7,
   presence: 0.8,

@@ -13,7 +13,7 @@ export const bulwarkConfig: UnitTypeConfig = {
     hp: 260,
     dmg: 12,
     range: 26,
-    speed: 24,
+    speed: 12,
     attackRate: 1.3,
     cost: 7,
     presence: 1.6,

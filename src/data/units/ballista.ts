@@ -13,7 +13,7 @@ export const ballistaConfig: UnitTypeConfig = {
     hp: 120,
     dmg: 40,
     range: 230,
-    speed: 24,
+    speed: 10,
     attackRate: 2.0,
     cost: 8,
     presence: 0.9,

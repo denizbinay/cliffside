@@ -13,7 +13,7 @@ export const adeptConfig: UnitTypeConfig = {
   hp: 85,
   dmg: 0,
   range: 110,
-  speed: 20,
+  speed: 15,
   attackRate: 0.9,
   cost: 3,
   presence: 0.6,

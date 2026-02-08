@@ -13,7 +13,7 @@ export const sentinelConfig: UnitTypeConfig = {
     hp: 160,
     dmg: 16,
     range: 30,
-    speed: 30,
+    speed: 7,
     attackRate: 1.0,
     cost: 3,
     presence: 1.1,

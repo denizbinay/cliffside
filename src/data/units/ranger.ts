@@ -13,7 +13,7 @@ export const rangerConfig: UnitTypeConfig = {
     hp: 100,
     dmg: 22,
     range: 170,
-    speed: 34,
+    speed: 10,
     attackRate: 1.1,
     cost: 5,
     presence: 0.8,

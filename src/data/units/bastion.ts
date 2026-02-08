@@ -13,7 +13,7 @@ export const bastionConfig: UnitTypeConfig = {
     hp: 240,
     dmg: 18,
     range: 28,
-    speed: 22,
+    speed: 10,
     attackRate: 1.2,
     cost: 7,
     presence: 1.5,

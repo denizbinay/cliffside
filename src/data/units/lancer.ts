@@ -13,7 +13,7 @@ export const lancerConfig: UnitTypeConfig = {
     hp: 120,
     dmg: 18,
     range: 36,
-    speed: 44,
+    speed: 12,
     attackRate: 1.2,
     cost: 5,
     presence: 0.9,

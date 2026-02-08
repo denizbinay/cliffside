@@ -234,8 +234,8 @@ export default class GameScene extends Phaser.Scene {
     this.shopManager.rollOffers(SIDE.PLAYER, stageIndex, true);
     this.shopManager.rollOffers(SIDE.AI, stageIndex, true);
 
-    this.ghostAlpha = 0.35;
-    this.createGhostFormation();
+    // this.ghostAlpha = 0.35;
+    // this.createGhostFormation();
 
     this.economy.emitResourceUpdate();
 
@@ -382,7 +382,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     if (simulated) {
-      this.updateGhostFormation();
+      // this.updateGhostFormation();
       this.refreshControlPointVisuals();
       this.checkGameOver();
       this.updateCastleHud();
@@ -1280,6 +1280,6 @@ export default class GameScene extends Phaser.Scene {
     this.createBridge();
     this.createCastles();
     this.createTurrets();
-    this.updateGhostFormation();
+    // this.updateGhostFormation();
   }
 }

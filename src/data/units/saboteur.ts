@@ -13,7 +13,7 @@ export const saboteurConfig: UnitTypeConfig = {
     hp: 90,
     dmg: 10,
     range: 30,
-    speed: 50,
+    speed: 20,
     attackRate: 1.0,
     cost: 3,
     presence: 0.7,

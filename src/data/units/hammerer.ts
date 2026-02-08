@@ -13,7 +13,7 @@ export const hammererConfig: UnitTypeConfig = {
     hp: 140,
     dmg: 16,
     range: 28,
-    speed: 36,
+    speed: 5,
     attackRate: 1.5,
     cost: 5,
     presence: 1.0,

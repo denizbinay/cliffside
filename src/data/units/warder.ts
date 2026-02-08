@@ -13,7 +13,7 @@ export const warderConfig: UnitTypeConfig = {
     hp: 150,
     dmg: 0,
     range: 110,
-    speed: 28,
+    speed: 6,
     attackRate: 1.3,
     cost: 5,
     presence: 0.9,

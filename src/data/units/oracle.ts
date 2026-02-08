@@ -13,7 +13,7 @@ export const oracleConfig: UnitTypeConfig = {
     hp: 110,
     dmg: 0,
     range: 180,
-    speed: 30,
+    speed: 9,
     attackRate: 1.5,
     cost: 7,
     presence: 0.8,

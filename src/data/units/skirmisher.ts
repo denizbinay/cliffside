@@ -13,7 +13,7 @@ export const skirmisherConfig: UnitTypeConfig = {
     hp: 80,
     dmg: 16,
     range: 90,
-    speed: 48,
+    speed: 20,
     attackRate: 0.7,
     cost: 3,
     presence: 0.6,

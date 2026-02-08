@@ -13,7 +13,7 @@ export const clericConfig: UnitTypeConfig = {
     hp: 110,
     dmg: 0,
     range: 120,
-    speed: 34,
+    speed: 12,
     attackRate: 1.2,
     cost: 4,
     presence: 0.7,
