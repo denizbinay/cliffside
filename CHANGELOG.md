@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 - Unit sprites now scale uniformly based on height to preserve aspect ratio, fixing distortion issues.
 - Updated default layout profile (turret size, position, health bar) and bumped storage key to V10.
+- Unit depth increased to `DEPTH.UNITS` (30) to ensure they render in front of turrets (`DEPTH.TURRETS` = 20).
 - Turret rendering now calculates width based on the texture's native aspect ratio while preserving configured height.
 - Turret orientation standardized: AI side is always flipped (mirrored), assuming right-facing source assets.
 

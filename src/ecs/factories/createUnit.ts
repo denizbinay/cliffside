@@ -19,7 +19,7 @@ import {
   FACTION,
   ROLE
 } from "../components";
-import { UNIT_SIZE } from "../../config/GameConfig";
+import { UNIT_SIZE, DEPTH } from "../../config/GameConfig";
 import type { GameWorld } from "../world";
 import type { Side, StanceModifiers, UnitRole, UnitTypeConfig } from "../../types";
 import type { ConfigStore } from "../stores/ConfigStore";
@@ -105,7 +105,7 @@ export function createUnit(world: GameWorld, options: CreateUnitOptions): number
 
   Render.storeIndex[eid] = 0;
   Render.visible[eid] = 1;
-  Render.depth[eid] = 4;
+  Render.depth[eid] = DEPTH.UNITS;
 
   return eid;
 }
