@@ -57,7 +57,7 @@ export function createCastleVisuals(options: CreateCastleVisualsOptions): number
   container.setDepth(DEPTH.CASTLE);
 
   let mainShape: Phaser.GameObjects.Shape | Phaser.GameObjects.Sprite | Phaser.GameObjects.Image;
-  let mainSprite: Phaser.GameObjects.Sprite | null = null;
+  const mainSprite: Phaser.GameObjects.Sprite | null = null;
 
   if (hasCastleBase) {
     const base = scene.add.image(0, baseCenterYOffset, castleKey).setDisplaySize(baseWidth, baseHeight);

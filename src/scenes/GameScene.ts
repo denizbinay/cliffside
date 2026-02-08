@@ -135,22 +135,18 @@ export default class GameScene extends Phaser.Scene {
   foundationDeckHeight!: number;
   spawnDeckY!: number;
   spawnDeckHeight!: number;
-  bridgeY!: number;
-  bridgePlankY!: number;
-  bridgeThickness!: number;
-  bridgeShowPillars!: boolean;
-  bridgeShowRopes!: boolean;
-  bridgeShowControlFx!: boolean;
-  bridgeRopeTopY!: number;
-  bridgeRopeBottomY!: number;
-  bridgePillarY!: number;
-  bridgePillarHeight!: number;
-  bridgePillarStep!: number;
-  turretSideInset!: number;
+  bridgeSpriteImage1!: Phaser.GameObjects.Image | null;
+  bridgeSpriteImage2!: Phaser.GameObjects.Image | null;
+  turretX!: number;
   turretY!: number;
-  unitSpawnInset!: number;
-  unitLaneY!: number;
-  unitCalloutOffsetY!: number;
+  spawnXPlayer!: number;
+  spawnXAI!: number;
+  laneStartX!: number;
+  laneEndX!: number;
+  laneY!: number;
+  laneCalloutOffsetY!: number;
+  controlStartX!: number;
+  controlEndX!: number;
   controlY!: number;
   controlZoneWidth!: number;
   controlZoneHeight!: number;
@@ -367,7 +363,7 @@ export default class GameScene extends Phaser.Scene {
 
     if (this.timeScaleKey && Phaser.Input.Keyboard.JustDown(this.timeScaleKey)) {
       this.simClock.timeScale = this.simClock.timeScale === 1.0 ? 2.0 : 1.0;
-      // eslint-disable-next-line no-console
+
       console.log(`Time scale: ${this.simClock.timeScale}x`);
       this.events.emit("log", { type: "system", text: `Time scale: ${this.simClock.timeScale}x` });
     }
@@ -459,169 +455,82 @@ export default class GameScene extends Phaser.Scene {
     vignette.setBlendMode(Phaser.BlendModes.MULTIPLY);
   }
 
+  createBridgeSprites(): void {
+    // Destroy existing bridge sprites if any
+    if (this.bridgeSpriteImage1) {
+      this.bridgeSpriteImage1.destroy();
+      this.bridgeSpriteImage1 = null;
+    }
+    if (this.bridgeSpriteImage2) {
+      this.bridgeSpriteImage2.destroy();
+      this.bridgeSpriteImage2 = null;
+    }
+
+    if (!this.textures.exists("bridge_sprite")) return;
+
+    const frame = this.textures.get("bridge_sprite").getSourceImage() as HTMLImageElement;
+    const nativeWidth = frame.width;
+    const nativeHeight = frame.height;
+
+    // Create first bridge sprite
+    const profile1 = this.layoutProfile.bridgeSprite1;
+    this.bridgeSpriteImage1 = this.add
+      .image(profile1.x, profile1.y, "bridge_sprite")
+      .setDisplaySize(nativeWidth * profile1.scale, nativeHeight * profile1.scale)
+      .setDepth(DEPTH.BRIDGE_SPRITE);
+
+    // Create second bridge sprite
+    const profile2 = this.layoutProfile.bridgeSprite2;
+    this.bridgeSpriteImage2 = this.add
+      .image(profile2.x, profile2.y, "bridge_sprite")
+      .setDisplaySize(nativeWidth * profile2.scale, nativeHeight * profile2.scale)
+      .setDepth(DEPTH.BRIDGE_SPRITE);
+  }
+
   createBridge(): void {
     this.clearBridgeVisuals();
-    const bridgeY = this.controlY;
-    const bridgeThickness = this.bridgeThickness;
-    const bridgePlankY = this.bridgePlankY;
-    const ropeTopY = this.bridgeRopeTopY;
-    const ropeBottomY = this.bridgeRopeBottomY;
+    this.createBridgeSprites();
 
-    this.platformLeftStart = this.boardLayout.leftSpawnStart;
-    this.platformLeftEnd = this.boardLayout.leftSpawnEnd;
-    this.platformRightStart = this.boardLayout.rightSpawnStart;
-    this.platformRightEnd = this.boardLayout.rightSpawnEnd;
-    this.bridgeLeft = this.boardLayout.bridgeLeft;
-    this.bridgeRight = this.boardLayout.bridgeRight;
-    const bridgeWidth = this.bridgeRight - this.bridgeLeft;
-    const bridgeCenter = this.playArea.x + this.playArea.width / 2;
+    // Use control bounds for positioning
+    const controlWidth = this.controlEndX - this.controlStartX;
 
-    const hasBridgePlank = this.textures.exists("bridge_plank");
-    const hasBridgePillar = this.textures.exists("bridge_pillar");
-    const hasBridgeRope = this.textures.exists("bridge_rope");
-
-    if (hasBridgePlank) {
-      const segmentCount = 6;
-      const segmentWidth = bridgeWidth / segmentCount;
-      for (let i = 0; i < segmentCount; i += 1) {
-        const x = this.bridgeLeft + segmentWidth * (i + 0.5);
-        this.addBridgeVisual(
-          this.add
-            .image(x, bridgePlankY, "bridge_plank")
-            .setDisplaySize(segmentWidth + 2, bridgeThickness)
-            .setDepth(DEPTH.BRIDGE_PLANKS)
-        );
-      }
-    } else {
-      this.addBridgeVisual(
-        this.add
-          .rectangle(bridgeCenter, bridgePlankY, bridgeWidth, bridgeThickness - 6, 0x3c312c)
-          .setStrokeStyle(2, 0x241b18, 1)
-          .setDepth(DEPTH.BRIDGE_PLANKS)
-      );
-      this.addBridgeVisual(
-        this.add
-          .rectangle(bridgeCenter, bridgePlankY - bridgeThickness * 0.4, bridgeWidth - 16, 6, 0x2a211e)
-          .setDepth(DEPTH.BRIDGE_PLANKS)
-      );
-      this.addBridgeVisual(
-        this.add
-          .rectangle(bridgeCenter, bridgePlankY + bridgeThickness * 0.4, bridgeWidth - 16, 6, 0x2a211e)
-          .setDepth(DEPTH.BRIDGE_PLANKS)
-      );
-    }
-
-    if (this.bridgeShowPillars) {
-      for (let x = this.bridgeLeft + 20; x <= this.bridgeRight - 20; x += this.bridgePillarStep) {
-        if (hasBridgePillar) {
-          this.addBridgeVisual(
-            this.add
-              .image(x, this.bridgePillarY, "bridge_pillar")
-              .setDisplaySize(18, this.bridgePillarHeight)
-              .setDepth(DEPTH.BRIDGE_PILLARS)
-          );
-        } else {
-          this.addBridgeVisual(
-            this.add
-              .rectangle(x, this.bridgePillarY, 10, this.bridgePillarHeight - 4, 0x2d2522)
-              .setDepth(DEPTH.BRIDGE_PILLARS)
-          );
-        }
-      }
-    }
-
-    if (this.bridgeShowRopes) {
-      if (hasBridgeRope) {
-        this.addBridgeVisual(
-          this.add
-            .tileSprite(bridgeCenter, ropeTopY, bridgeWidth, 12, "bridge_rope")
-            .setDepth(DEPTH.BRIDGE_ROPES)
-            .setAlpha(0.9)
-        );
-        this.addBridgeVisual(
-          this.add
-            .tileSprite(bridgeCenter, ropeBottomY, bridgeWidth, 12, "bridge_rope")
-            .setDepth(DEPTH.BRIDGE_ROPES)
-            .setAlpha(0.9)
-        );
-      } else {
-        const rope = this.addBridgeVisual(this.add.graphics().setDepth(DEPTH.BRIDGE_ROPES));
-        (rope as Phaser.GameObjects.Graphics).lineStyle(3, 0x1b1f27, 0.9);
-        this.drawRope(rope as Phaser.GameObjects.Graphics, this.bridgeLeft, this.bridgeRight, ropeTopY - 2, 10);
-        this.drawRope(rope as Phaser.GameObjects.Graphics, this.bridgeLeft, this.bridgeRight, ropeBottomY + 2, 10);
-      }
-    }
-
+    // Control points use control bounds
     this._controlPoints = [];
     this.controlPointEids = [];
-    const hasControlRune = this.textures.exists("control_rune");
-    const hasControlGlow = this.textures.exists("control_glow");
     const pointCount = CONTROL_POINT_CONFIG.count;
-    const spacing = bridgeWidth / (pointCount + 1);
+    const spacing = controlWidth / (pointCount + 1);
     for (let i = 0; i < pointCount; i += 1) {
-      const x = this.bridgeLeft + spacing * (i + 1);
-      const glow =
-        this.bridgeShowControlFx && hasControlGlow
-          ? (this.addBridgeVisual(
-              this.add
-                .image(x, bridgeY, "control_glow")
-                .setDisplaySize(36, 36)
-                .setAlpha(0.45)
-                .setDepth(DEPTH.CONTROL_POINT)
-            ) as Phaser.GameObjects.Image)
-          : null;
-      const rune =
-        this.bridgeShowControlFx && hasControlRune
-          ? (this.addBridgeVisual(
-              this.add
-                .image(x, bridgeY, "control_rune")
-                .setDisplaySize(26, 26)
-                .setAlpha(0.85)
-                .setDepth(DEPTH.CONTROL_POINT)
-            ) as Phaser.GameObjects.Image)
-          : null;
+      const x = this.controlStartX + spacing * (i + 1);
+      const y = this.controlY;
       const marker = this.addBridgeVisual(
-        this.add.circle(x, bridgeY, 10, 0x323844, 0.8).setStrokeStyle(2, 0x5b616e, 1)
+        this.add.circle(x, y, 10, 0x323844, 0.8).setStrokeStyle(2, 0x5b616e, 1)
       ) as Phaser.GameObjects.Arc;
-      const core = this.addBridgeVisual(this.add.circle(x, bridgeY, 5, 0x7b8598, 0.9)) as Phaser.GameObjects.Arc;
+      const core = this.addBridgeVisual(this.add.circle(x, y, 5, 0x7b8598, 0.9)) as Phaser.GameObjects.Arc;
       marker.setDepth(DEPTH.CONTROL_POINT);
       core.setDepth(DEPTH.CONTROL_POINT + 1);
       this._controlPoints.push({
         index: i,
         x,
-        y: bridgeY,
+        y,
         owner: "neutral",
         progress: 0,
-        glow,
-        rune,
+        glow: null,
+        rune: null,
         marker,
         core,
         zone: new Phaser.Geom.Rectangle(
           x - this.controlZoneWidth / 2,
-          bridgeY - this.controlZoneHeight / 2,
+          y - this.controlZoneHeight / 2,
           this.controlZoneWidth,
           this.controlZoneHeight
         )
       });
 
       if (this.ecsBridge?.world) {
-        const eid = createControlPoint(this.ecsBridge.world, { x, y: bridgeY, owner: "neutral" });
+        const eid = createControlPoint(this.ecsBridge.world, { x, y, owner: "neutral" });
         this.controlPointEids.push(eid);
       }
     }
-  }
-
-  drawRope(graphics: Phaser.GameObjects.Graphics, x1: number, x2: number, y: number, sag: number): void {
-    const steps = 18;
-    graphics.beginPath();
-    graphics.moveTo(x1, y);
-    for (let i = 1; i <= steps; i += 1) {
-      const t = i / steps;
-      const x = Phaser.Math.Linear(x1, x2, t);
-      const yOffset = Math.sin(t * Math.PI) * sag;
-      graphics.lineTo(x, y + yOffset);
-    }
-    graphics.strokePath();
   }
 
   // --- Castle & Turret Management ---
@@ -679,12 +588,13 @@ export default class GameScene extends Phaser.Scene {
 
   createTurrets(): void {
     this.destroyTurrets();
-    const offset = this.turretSideInset;
-    const turretY = this.turretY;
+    const mirrorCenterX = this.width / 2;
+
+    // Player turret uses absolute position
     this.playerTurretEid = createTurret(this.ecsBridge.world, {
       side: SIDE.PLAYER,
-      x: this.platformLeftEnd - offset,
-      y: turretY
+      x: this.turretX,
+      y: this.turretY
     });
     createTurretVisuals({
       scene: this,
@@ -694,10 +604,12 @@ export default class GameScene extends Phaser.Scene {
       renderStore: this.ecsBridge.renderStore
     });
 
+    // AI turret is mirrored from player turret
+    const aiTurretX = mirrorCenterX * 2 - this.turretX;
     this.aiTurretEid = createTurret(this.ecsBridge.world, {
       side: SIDE.AI,
-      x: this.platformRightStart + offset,
-      y: turretY
+      x: aiTurretX,
+      y: this.turretY
     });
     createTurretVisuals({
       scene: this,
@@ -743,13 +655,13 @@ export default class GameScene extends Phaser.Scene {
       if (!this.economy.spend(side, cost)) return false;
     }
 
-    const spawnX =
-      side === SIDE.PLAYER ? this.platformLeftStart + this.unitSpawnInset : this.platformRightEnd - this.unitSpawnInset;
+    // Units spawn at per-side spawn points
+    const spawnX = side === SIDE.PLAYER ? this.spawnXPlayer : this.spawnXAI;
     const eid = createUnit(this.ecsBridge.world, {
       config,
       side,
       x: spawnX + offset,
-      y: this.unitLaneY,
+      y: this.laneY,
       modifiers,
       presenceMult,
       configStore: this.ecsBridge.configStore,
@@ -757,8 +669,8 @@ export default class GameScene extends Phaser.Scene {
     });
     createUnitVisuals(this, eid, config, side, this.ecsBridge.renderStore);
 
-    this.spawnPulse(spawnX + offset, this.unitLaneY, config.color);
-    this.spawnCallout(spawnX + offset, this.unitLaneY + this.unitCalloutOffsetY, config.name, side);
+    this.spawnPulse(spawnX + offset, this.laneY, config.color);
+    this.spawnCallout(spawnX + offset, this.laneY + this.laneCalloutOffsetY, config.name, side);
     this.events.emit("log", { type: "spawn", side, name: config.name });
     if (payCost) this.economy.emitResourceUpdate();
     return true;
@@ -1142,18 +1054,22 @@ export default class GameScene extends Phaser.Scene {
 
   getPlatformZone(side: Side, extra = 0): Phaser.Geom.Rectangle {
     const height = 90;
+    const mirrorCenterX = this.width / 2;
     if (side === SIDE.PLAYER) {
       return new Phaser.Geom.Rectangle(
-        this.platformLeftStart,
-        this.unitLaneY - height / 2,
-        this.platformLeftEnd - this.platformLeftStart + extra,
+        this.laneStartX,
+        this.laneY - height / 2,
+        this.laneEndX - this.laneStartX + extra,
         height
       );
     }
+    // Mirror for AI side
+    const aiLaneEndX = mirrorCenterX * 2 - this.laneStartX;
+    const aiLaneStartX = mirrorCenterX * 2 - this.laneEndX;
     return new Phaser.Geom.Rectangle(
-      this.platformRightStart - extra,
-      this.unitLaneY - height / 2,
-      this.platformRightEnd - this.platformRightStart + extra,
+      aiLaneStartX - extra,
+      this.laneY - height / 2,
+      aiLaneEndX - aiLaneStartX + extra,
       height
     );
   }
@@ -1210,6 +1126,10 @@ export default class GameScene extends Phaser.Scene {
       profile.decks.spawn.rightEnd = mirrorX(profile.decks.spawn.leftStart);
     }
 
+    profile.spawn.aiX = mirrorX(profile.spawn.playerX);
+    profile.lane.endX = mirrorX(profile.lane.startX);
+    profile.control.endX = mirrorX(profile.control.startX);
+
     profile.decks.foundation.leftEnd = Math.max(
       profile.decks.foundation.leftEnd,
       profile.decks.foundation.leftStart + 30
@@ -1236,26 +1156,24 @@ export default class GameScene extends Phaser.Scene {
     this.foundationDeckHeight = profile.decks.foundation.height;
     this.spawnDeckY = profile.decks.spawn.topY;
     this.spawnDeckHeight = profile.decks.spawn.height;
-    this.bridgeY = profile.bridge.topY;
 
-    this.bridgePlankY = profile.bridge.topY + profile.bridge.plankOffsetY;
-    this.bridgeThickness = profile.bridge.thickness;
-    this.bridgeShowPillars = Boolean(profile.bridge.showPillars);
-    this.bridgeShowRopes = Boolean(profile.bridge.showRopes);
-    this.bridgeShowControlFx = Boolean(profile.bridge.showControlFx);
-    this.bridgeRopeTopY = profile.bridge.topY + profile.bridge.ropeTopOffset;
-    this.bridgeRopeBottomY = profile.bridge.topY + profile.bridge.ropeBottomOffset;
-    this.bridgePillarY = profile.bridge.topY + profile.bridge.pillarOffsetY;
-    this.bridgePillarHeight = profile.bridge.pillarHeight;
-    this.bridgePillarStep = profile.bridge.pillarStep;
+    // Turret uses absolute positioning
+    this.turretX = profile.turret.x;
+    this.turretY = profile.turret.y;
 
-    this.turretSideInset = profile.turret.sideInset;
-    this.turretY = this.spawnDeckY + profile.turret.yOffset;
+    // Spawn points (player/ai)
+    this.spawnXPlayer = profile.spawn.playerX;
+    this.spawnXAI = profile.spawn.aiX;
 
-    this.unitSpawnInset = profile.units.spawnInset;
-    this.unitLaneY = profile.units.laneY;
-    this.unitCalloutOffsetY = profile.units.calloutOffsetY;
+    // Lane bounds
+    this.laneStartX = profile.lane.startX;
+    this.laneEndX = profile.lane.endX;
+    this.laneY = profile.lane.y;
+    this.laneCalloutOffsetY = profile.lane.calloutOffsetY;
 
+    // Control bounds
+    this.controlStartX = profile.control.startX;
+    this.controlEndX = profile.control.endX;
     this.controlY = profile.control.y;
     this.controlZoneWidth = profile.control.zoneWidth;
     this.controlZoneHeight = profile.control.zoneHeight;
@@ -1289,9 +1207,11 @@ export default class GameScene extends Phaser.Scene {
           foundation: { ...this.layoutProfile.decks.foundation, ...(parsed.decks?.foundation || {}) },
           spawn: { ...this.layoutProfile.decks.spawn, ...(parsed.decks?.spawn || {}) }
         },
-        bridge: { ...this.layoutProfile.bridge, ...(parsed.bridge || {}) },
+        bridgeSprite1: { ...this.layoutProfile.bridgeSprite1, ...(parsed.bridgeSprite1 || {}) },
+        bridgeSprite2: { ...this.layoutProfile.bridgeSprite2, ...(parsed.bridgeSprite2 || {}) },
         turret: { ...this.layoutProfile.turret, ...(parsed.turret || {}) },
-        units: { ...this.layoutProfile.units, ...(parsed.units || {}) },
+        spawn: { ...this.layoutProfile.spawn, ...(parsed.spawn || {}) },
+        lane: { ...this.layoutProfile.lane, ...(parsed.lane || {}) },
         control: { ...this.layoutProfile.control, ...(parsed.control || {}) }
       };
     } catch {

@@ -10,6 +10,7 @@ interface Handle {
   get: () => { x: number; y: number };
   set: (x: number, y: number) => void;
   onWheel?: (dy: number) => void;
+  readOnly?: boolean;
 }
 
 export default class LayoutDevTool {
@@ -58,7 +59,7 @@ export default class LayoutDevTool {
     this.scene.input.on("wheel", (_pointer: unknown, _objects: unknown, _dx: number, dy: number) => {
       if (!this.enabled) return;
       const selected = this.handles.find((h) => h.id === this.selectedId);
-      if (!selected || !selected.onWheel) return;
+      if (!selected || !selected.onWheel || selected.readOnly) return;
       selected.onWheel(dy);
       this.commit();
     });
@@ -81,7 +82,7 @@ export default class LayoutDevTool {
     };
     const nudge = keys.shift.isDown ? 5 : 1;
     const selected = this.handles.find((h) => h.id === this.selectedId);
-    if (!selected || !selected.set) return;
+    if (!selected || !selected.set || selected.readOnly) return;
 
     const pos = selected.get();
     let changed = false;
@@ -138,7 +139,7 @@ export default class LayoutDevTool {
     panel.style.display = "none";
     panel.innerHTML = `
       <div style="margin-bottom:6px; font-weight:700;">Layout Dev Tool</div>
-      <div style="margin-bottom:8px; opacity:0.85;">Toggle: K. Drag handles to move, wheel to resize selected.</div>
+      <div style="margin-bottom:8px; opacity:0.85;">Toggle: K. Drag handles to move, wheel to resize/scale selected.</div>
       <div data-layout-info style="margin-bottom:8px; min-height:48px;"></div>
       <div style="display:flex; gap:6px; flex-wrap:wrap;">
         <button data-layout-copy type="button">Copy JSON</button>
@@ -148,17 +149,6 @@ export default class LayoutDevTool {
           <input data-layout-mirror type="checkbox" checked /> Mirror
         </label>
       </div>
-      <div style="display:flex; gap:10px; margin-top:8px; flex-wrap:wrap;">
-        <label style="display:flex; align-items:center; gap:4px;">
-          <input data-layout-pillars type="checkbox" /> Pillars
-        </label>
-        <label style="display:flex; align-items:center; gap:4px;">
-          <input data-layout-ropes type="checkbox" /> Ropes
-        </label>
-        <label style="display:flex; align-items:center; gap:4px;">
-          <input data-layout-controlfx type="checkbox" /> Control FX
-        </label>
-      </div>
     `;
     document.body.appendChild(panel);
 
@@ -166,9 +156,6 @@ export default class LayoutDevTool {
     const saveBtn = panel.querySelector("[data-layout-save]");
     const resetBtn = panel.querySelector("[data-layout-reset]");
     const mirrorBox = panel.querySelector("[data-layout-mirror]") as HTMLInputElement;
-    const pillarsBox = panel.querySelector("[data-layout-pillars]") as HTMLInputElement;
-    const ropesBox = panel.querySelector("[data-layout-ropes]") as HTMLInputElement;
-    const controlFxBox = panel.querySelector("[data-layout-controlfx]") as HTMLInputElement;
 
     copyBtn?.addEventListener("click", () => this.scene.exportLayoutProfile());
     saveBtn?.addEventListener("click", () => this.scene.saveLayoutProfile());
@@ -184,18 +171,6 @@ export default class LayoutDevTool {
       this.scene.layoutProfile.mirrorMode = Boolean((event.target as HTMLInputElement)?.checked);
       this.commit();
     });
-    pillarsBox?.addEventListener("change", (event) => {
-      this.scene.layoutProfile.bridge.showPillars = Boolean((event.target as HTMLInputElement)?.checked);
-      this.commit();
-    });
-    ropesBox?.addEventListener("change", (event) => {
-      this.scene.layoutProfile.bridge.showRopes = Boolean((event.target as HTMLInputElement)?.checked);
-      this.commit();
-    });
-    controlFxBox?.addEventListener("change", (event) => {
-      this.scene.layoutProfile.bridge.showControlFx = Boolean((event.target as HTMLInputElement)?.checked);
-      this.commit();
-    });
 
     this.panel = panel;
   }
@@ -205,13 +180,7 @@ export default class LayoutDevTool {
     this.panel.style.display = this.enabled ? "block" : "none";
     const info = this.panel.querySelector("[data-layout-info]");
     const mirror = this.panel.querySelector("[data-layout-mirror]") as HTMLInputElement;
-    const pillars = this.panel.querySelector("[data-layout-pillars]") as HTMLInputElement;
-    const ropes = this.panel.querySelector("[data-layout-ropes]") as HTMLInputElement;
-    const controlFx = this.panel.querySelector("[data-layout-controlfx]") as HTMLInputElement;
     if (mirror) mirror.checked = Boolean(this.scene.layoutProfile?.mirrorMode);
-    if (pillars) pillars.checked = Boolean(this.scene.layoutProfile?.bridge?.showPillars);
-    if (ropes) ropes.checked = Boolean(this.scene.layoutProfile?.bridge?.showRopes);
-    if (controlFx) controlFx.checked = Boolean(this.scene.layoutProfile?.bridge?.showControlFx);
     if (!info) return;
     if (!this.enabled) {
       info.textContent = "";
@@ -223,13 +192,26 @@ export default class LayoutDevTool {
       return;
     }
     const pos = selected.get();
-    info.textContent = `${selected.label}  x:${Math.round(pos.x)} y:${Math.round(pos.y)}`;
+    // Show scale for bridge sprite handles
+    if (selected.id === "bridge-sprite-1") {
+      const scale = this.scene.layoutProfile.bridgeSprite1.scale;
+      info.textContent = `${selected.label}  x:${Math.round(pos.x)} y:${Math.round(pos.y)} scale:${scale.toFixed(3)}`;
+    } else if (selected.id === "bridge-sprite-2") {
+      const scale = this.scene.layoutProfile.bridgeSprite2.scale;
+      info.textContent = `${selected.label}  x:${Math.round(pos.x)} y:${Math.round(pos.y)} scale:${scale.toFixed(3)}`;
+    } else if (selected.readOnly) {
+      info.textContent = `${selected.label} (mirrored)  x:${Math.round(pos.x)} y:${Math.round(pos.y)}`;
+    } else {
+      info.textContent = `${selected.label}  x:${Math.round(pos.x)} y:${Math.round(pos.y)}`;
+    }
   }
 
   setupHandles(): void {
     this.destroyHandles();
     const scene = this.scene;
     const profile = scene.layoutProfile;
+    const mirrorCenterX = scene.width / 2;
+    const mirrorX = (x: number) => mirrorCenterX * 2 - x;
 
     const makeHandle = (
       id: string,
@@ -237,32 +219,47 @@ export default class LayoutDevTool {
       color: number,
       get: () => { x: number; y: number },
       set: (x: number, y: number) => void,
-      onWheel?: (dy: number) => void
+      onWheel?: (dy: number) => void,
+      readOnly = false
     ) => {
       const p = get();
-      const dot = scene.add.circle(p.x, p.y, 9, color, 0.95).setDepth(100).setStrokeStyle(2, 0x10131b, 1);
+      // Read-only markers are smaller, dimmer, and have dashed stroke
+      const radius = readOnly ? 6 : 9;
+      const alpha = readOnly ? 0.5 : 0.95;
+      const dot = scene.add.circle(p.x, p.y, radius, color, alpha).setDepth(100).setStrokeStyle(2, 0x10131b, 1);
       const txt = scene.add
         .text(p.x + 12, p.y - 8, label, {
           fontFamily: "monospace",
           fontSize: "11px",
-          color: "#f0f4ff"
+          color: readOnly ? "#8899aa" : "#f0f4ff"
         })
-        .setDepth(101);
-      dot.setInteractive({ draggable: true, useHandCursor: true });
-      scene.input.setDraggable(dot);
-      const handle = { id, label, dot, txt, get, set, onWheel };
+        .setDepth(101)
+        .setAlpha(readOnly ? 0.5 : 1);
+
+      if (!readOnly) {
+        dot.setInteractive({ draggable: true, useHandCursor: true });
+        scene.input.setDraggable(dot);
+      }
+
+      const handle: Handle = { id, label, dot, txt, get, set, onWheel, readOnly };
+
       dot.on("pointerdown", () => {
         this.selectedId = id;
         this.refreshHandles();
         this.syncPanel();
       });
-      dot.on("drag", (_pointer: unknown, dragX: number, dragY: number) => {
-        set(dragX, dragY);
-        this.commit();
-      });
+
+      if (!readOnly) {
+        dot.on("drag", (_pointer: unknown, dragX: number, dragY: number) => {
+          set(dragX, dragY);
+          this.commit();
+        });
+      }
+
       this.handles.push(handle);
     };
 
+    // --- Castle ---
     makeHandle(
       "castle-player",
       "Castle",
@@ -274,7 +271,6 @@ export default class LayoutDevTool {
       },
       (dy) => {
         const mult = dy > 0 ? 0.98 : 1.02;
-        // Wide limits - actual sizing is configured via layout profile
         profile.castle.baseWidth = Phaser.Math.Clamp(profile.castle.baseWidth * mult, 40, 800);
         profile.castle.baseHeight = Phaser.Math.Clamp(profile.castle.baseHeight * mult, 30, 600);
         profile.castle.towerWidth = Phaser.Math.Clamp(profile.castle.towerWidth * mult, 20, 400);
@@ -284,7 +280,7 @@ export default class LayoutDevTool {
 
     makeHandle(
       "castle-hp",
-      "HP Bar",
+      "Castle HP",
       0x95d79a,
       () => ({
         x: scene.castleXLeft + profile.castle.hpOffsetX,
@@ -296,66 +292,119 @@ export default class LayoutDevTool {
       },
       (dy) => {
         const mult = dy > 0 ? 0.97 : 1.03;
-        profile.castle.hpWidth = Phaser.Math.Clamp(profile.castle.hpWidth * mult, 120, 420);
-        profile.castle.hpHeight = Phaser.Math.Clamp(profile.castle.hpHeight * mult, 10, 48);
+        profile.castle.hpWidth = Phaser.Math.Clamp(profile.castle.hpWidth * mult, 60, 420);
+        profile.castle.hpHeight = Phaser.Math.Clamp(profile.castle.hpHeight * mult, 6, 48);
+      }
+    );
+
+    // --- Bridge Sprites (independent) ---
+    makeHandle(
+      "bridge-sprite-1",
+      "Bridge 1",
+      0xd4a574,
+      () => ({ x: profile.bridgeSprite1.x, y: profile.bridgeSprite1.y }),
+      (x, y) => {
+        profile.bridgeSprite1.x = x;
+        profile.bridgeSprite1.y = y;
+      },
+      (dy) => {
+        const mult = dy > 0 ? 0.98 : 1.02;
+        profile.bridgeSprite1.scale = Phaser.Math.Clamp(profile.bridgeSprite1.scale * mult, 0.1, 2.0);
       }
     );
 
     makeHandle(
-      "spawn-left-start",
+      "bridge-sprite-2",
+      "Bridge 2",
+      0xc49564,
+      () => ({ x: profile.bridgeSprite2.x, y: profile.bridgeSprite2.y }),
+      (x, y) => {
+        profile.bridgeSprite2.x = x;
+        profile.bridgeSprite2.y = y;
+      },
+      (dy) => {
+        const mult = dy > 0 ? 0.98 : 1.02;
+        profile.bridgeSprite2.scale = Phaser.Math.Clamp(profile.bridgeSprite2.scale * mult, 0.1, 2.0);
+      }
+    );
+
+    // --- Lane (3 handles: Start, End, Y-level) ---
+    makeHandle(
+      "lane-start",
       "Lane Start",
-      0xd9bf8b,
-      () => ({ x: profile.decks.spawn.leftStart, y: profile.decks.spawn.topY }),
+      0xe2a58a,
+      () => ({ x: profile.lane.startX, y: profile.lane.y }),
       (x, y) => {
-        profile.decks.spawn.leftStart = x;
-        profile.decks.spawn.topY = y;
-      },
-      // eslint-disable-next-line @typescript-eslint/no-empty-function
-      () => {}
-    );
-
-    makeHandle(
-      "bridge-left",
-      "Bridge Start",
-      0xb6c6a2,
-      () => ({ x: profile.decks.spawn.leftEnd, y: profile.bridge.topY }),
-      (x, y) => {
-        profile.decks.spawn.leftEnd = x;
-        profile.bridge.topY = y;
-      },
-      (dy) => {
-        profile.bridge.thickness = Phaser.Math.Clamp(profile.bridge.thickness + (dy > 0 ? -2 : 2), 18, 100);
+        profile.lane.startX = x;
+        profile.lane.y = y;
       }
     );
 
     makeHandle(
-      "bridge-thickness",
-      "Bridge H",
-      0x9ed592,
-      () => ({
-        x: scene.width / 2,
-        y: profile.bridge.topY + profile.bridge.plankOffsetY + profile.bridge.thickness / 2
-      }),
-      (_x, y) => {
-        profile.bridge.thickness = Phaser.Math.Clamp(
-          (y - (profile.bridge.topY + profile.bridge.plankOffsetY)) * 2,
-          14,
-          120
-        );
-      },
-      (dy) => {
-        profile.bridge.thickness = Phaser.Math.Clamp(profile.bridge.thickness + (dy > 0 ? -2 : 2), 14, 120);
+      "lane-end",
+      "Lane End",
+      0x888888,
+      () => ({ x: mirrorX(profile.lane.startX), y: profile.lane.y }),
+      () => {},
+      undefined,
+      true
+    );
+
+    // --- Spawn Points ---
+    makeHandle(
+      "spawn-player",
+      "Spawn Player",
+      0xa6c98f,
+      () => ({ x: profile.spawn.playerX, y: profile.lane.y }),
+      (x, _y) => {
+        profile.spawn.playerX = x;
       }
     );
 
     makeHandle(
-      "turret-player",
+      "spawn-ai",
+      "Spawn AI",
+      0x888888,
+      () => ({ x: mirrorX(profile.spawn.playerX), y: profile.lane.y }),
+      () => {},
+      undefined,
+      true
+    );
+
+    // --- Control Points (3 handles: Start, End, Y-level) ---
+    makeHandle(
+      "control-start",
+      "Control Start",
+      0xc99ce4,
+      () => ({ x: profile.control.startX, y: profile.control.y }),
+      (x, y) => {
+        profile.control.startX = x;
+        profile.control.y = y;
+      },
+      (dy) => {
+        profile.control.zoneWidth = Phaser.Math.Clamp(profile.control.zoneWidth + (dy > 0 ? -4 : 4), 40, 220);
+      }
+    );
+
+    makeHandle(
+      "control-end",
+      "Control End",
+      0x888888,
+      () => ({ x: mirrorX(profile.control.startX), y: profile.control.y }),
+      () => {},
+      undefined,
+      true
+    );
+
+    // --- Turret (absolute position, mirrored) ---
+    makeHandle(
+      "turret",
       "Turret",
       0x84c5c0,
-      () => ({ x: scene.platformLeftEnd - profile.turret.sideInset, y: scene.spawnDeckY + profile.turret.yOffset }),
+      () => ({ x: profile.turret.x, y: profile.turret.y }),
       (x, y) => {
-        profile.turret.sideInset = scene.platformLeftEnd - x;
-        profile.turret.yOffset = y - scene.spawnDeckY;
+        profile.turret.x = x;
+        profile.turret.y = y;
       },
       (dy) => {
         const mult = dy > 0 ? 0.96 : 1.04;
@@ -366,50 +415,33 @@ export default class LayoutDevTool {
       }
     );
 
+    // Mirrored turret (read-only marker)
+    makeHandle(
+      "turret-mirror",
+      "Turret",
+      0x888888,
+      () => ({ x: mirrorX(profile.turret.x), y: profile.turret.y }),
+      () => {},
+      undefined,
+      true
+    );
+
     makeHandle(
       "turret-hp",
       "Turret HP",
       0x8fd6ff,
       () => ({
-        x: scene.platformLeftEnd - profile.turret.sideInset + profile.turret.hpOffsetX,
-        y: scene.spawnDeckY + profile.turret.yOffset + profile.turret.hpOffsetY
+        x: profile.turret.x + profile.turret.hpOffsetX,
+        y: profile.turret.y + profile.turret.hpOffsetY
       }),
       (x, y) => {
-        const turretX = scene.platformLeftEnd - profile.turret.sideInset;
-        const turretY = scene.spawnDeckY + profile.turret.yOffset;
-        profile.turret.hpOffsetX = x - turretX;
-        profile.turret.hpOffsetY = y - turretY;
+        profile.turret.hpOffsetX = x - profile.turret.x;
+        profile.turret.hpOffsetY = y - profile.turret.y;
       },
       (dy) => {
         const mult = dy > 0 ? 0.97 : 1.03;
         profile.turret.hpWidth = Phaser.Math.Clamp(profile.turret.hpWidth * mult, 20, 140);
         profile.turret.hpHeight = Phaser.Math.Clamp(profile.turret.hpHeight * mult, 3, 24);
-      }
-    );
-
-    makeHandle(
-      "unit-spawn-player",
-      "Unit Spawn",
-      0xe2a58a,
-      () => ({ x: scene.platformLeftStart + profile.units.spawnInset, y: profile.units.laneY }),
-      (x, y) => {
-        profile.units.spawnInset = x - scene.platformLeftStart;
-        profile.units.laneY = y;
-      },
-      // eslint-disable-next-line @typescript-eslint/no-empty-function
-      () => {}
-    );
-
-    makeHandle(
-      "control-line",
-      "Control",
-      0xc99ce4,
-      () => ({ x: scene.width / 2, y: profile.control.y }),
-      (_x, y) => {
-        profile.control.y = y;
-      },
-      (dy) => {
-        profile.control.zoneWidth = Phaser.Math.Clamp(profile.control.zoneWidth + (dy > 0 ? -4 : 4), 40, 220);
       }
     );
 
@@ -421,8 +453,10 @@ export default class LayoutDevTool {
       const p = handle.get();
       handle.dot.setPosition(p.x, p.y);
       handle.txt.setPosition(p.x + 12, p.y - 8);
-      handle.dot.setScale(this.selectedId === handle.id ? 1.2 : 1);
-      handle.txt.setAlpha(this.selectedId === handle.id ? 1 : 0.7);
+      if (!handle.readOnly) {
+        handle.dot.setScale(this.selectedId === handle.id ? 1.2 : 1);
+        handle.txt.setAlpha(this.selectedId === handle.id ? 1 : 0.7);
+      }
     }
   }
 

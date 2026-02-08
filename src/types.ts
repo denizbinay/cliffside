@@ -203,23 +203,15 @@ export interface LayoutDeckSegment {
   height: number;
 }
 
-export interface LayoutBridgeProfile {
-  topY: number;
-  plankOffsetY: number;
-  thickness: number;
-  showPillars: boolean;
-  showRopes: boolean;
-  showControlFx: boolean;
-  ropeTopOffset: number;
-  ropeBottomOffset: number;
-  pillarOffsetY: number;
-  pillarHeight: number;
-  pillarStep: number;
+export interface LayoutBridgeSpriteProfile {
+  x: number;
+  y: number;
+  scale: number;
 }
 
 export interface LayoutTurretProfile {
-  sideInset: number;
-  yOffset: number;
+  x: number;
+  y: number;
   showBase: boolean;
   baseWidth: number;
   baseHeight: number;
@@ -231,16 +223,24 @@ export interface LayoutTurretProfile {
   hpHeight: number;
 }
 
-export interface LayoutUnitsProfile {
-  spawnInset: number;
-  laneY: number;
+export interface LayoutLaneProfile {
+  startX: number;
+  endX: number;
+  y: number;
   calloutOffsetY: number;
 }
 
 export interface LayoutControlProfile {
+  startX: number;
+  endX: number;
   y: number;
   zoneWidth: number;
   zoneHeight: number;
+}
+
+export interface LayoutSpawnProfile {
+  playerX: number;
+  aiX: number;
 }
 
 export interface LayoutProfile {
@@ -250,9 +250,11 @@ export interface LayoutProfile {
     foundation: LayoutDeckSegment;
     spawn: LayoutDeckSegment;
   };
-  bridge: LayoutBridgeProfile;
+  bridgeSprite1: LayoutBridgeSpriteProfile;
+  bridgeSprite2: LayoutBridgeSpriteProfile;
   turret: LayoutTurretProfile;
-  units: LayoutUnitsProfile;
+  spawn: LayoutSpawnProfile;
+  lane: LayoutLaneProfile;
   control: LayoutControlProfile;
 }
 

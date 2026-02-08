@@ -35,6 +35,7 @@ export default class PreloadScene extends Phaser.Scene {
     this.load.setPath("assets/environment/");
     this.load.image("env_skybox", "skybox.jpg");
     this.load.image("platform_stone", "platform_stone.png");
+    this.load.image("bridge_sprite", "bridge.png");
 
     // Structures
     this.load.setPath("assets/structures/");

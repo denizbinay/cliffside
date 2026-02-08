@@ -79,9 +79,11 @@ describe("GameConfig", () => {
     expect(profile.castle).toBeDefined();
     expect(profile.castle.playerX).toBeGreaterThan(0);
     expect(profile.decks).toBeDefined();
-    expect(profile.bridge).toBeDefined();
+    expect(profile.bridgeSprite1).toBeDefined();
+    expect(profile.bridgeSprite2).toBeDefined();
     expect(profile.turret).toBeDefined();
-    expect(profile.units).toBeDefined();
+    expect(profile.spawn).toBeDefined();
+    expect(profile.lane).toBeDefined();
     expect(profile.control).toBeDefined();
   });
 });

@@ -34,10 +34,9 @@ export const DEPTH = {
   BACKGROUND: -50,
   CASTLE: -10,
   CASTLE_HP: -5,
+  BRIDGE_SPRITE: -2,
   PLATFORMS: 0,
-  BRIDGE_PILLARS: 5,
   BRIDGE_PLANKS: 6,
-  BRIDGE_ROPES: 7,
   CONTROL_POINT: 10,
   TURRETS: 20,
   TURRET_HP: 21,
@@ -167,7 +166,7 @@ export const COMBAT_CONFIG: CombatConfig = {
 
 export const PHASE_LABELS: readonly string[] = ["Early", "Mid", "Late", "Final"];
 
-export const LAYOUT_STORAGE_KEY = "layoutProfileV6";
+export const LAYOUT_STORAGE_KEY = "layoutProfileV9";
 
 export function createDefaultLayoutProfile(): LayoutProfile {
   return {
@@ -207,39 +206,43 @@ export function createDefaultLayoutProfile(): LayoutProfile {
         height: 118
       }
     },
-    bridge: {
-      topY: 435.33247771836005,
-      plankOffsetY: 24,
-      thickness: 14,
-      showPillars: false,
-      showRopes: false,
-      showControlFx: false,
-      ropeTopOffset: 0,
-      ropeBottomOffset: 48,
-      pillarOffsetY: 23,
-      pillarHeight: 42,
-      pillarStep: 90
+    bridgeSprite1: {
+      x: 375.92279855247284,
+      y: 492.5693606755127,
+      scale: 0.49960008
+    },
+    bridgeSprite2: {
+      x: 906.3932448733414,
+      y: 494.88540410132686,
+      scale: 0.51
     },
     turret: {
-      sideInset: 59.830065359477146,
-      yOffset: 33.9566250742721,
+      x: 242.0989143546442,
+      y: 496.24849215922796,
       showBase: false,
       baseWidth: 108.66107764974379,
       baseHeight: 90.55089804145317,
       headWidth: 126.77125725803444,
       headHeight: 126.77125725803444,
-      hpOffsetX: -1.521093285799111,
-      hpOffsetY: -109.01247771836,
+      hpOffsetX: -2.29310776107053,
+      hpOffsetY: -102.83636191618871,
       hpWidth: 44,
       hpHeight: 5
     },
-    units: {
-      spawnInset: -78.64527629233508,
-      laneY: 442.93794414735595,
+    spawn: {
+      playerX: 164.48733413751512,
+      aiX: 1115.512665862485
+    },
+    lane: {
+      startX: 40.26537997587455,
+      endX: 1239.7346200241254,
+      y: 466.16043425814223,
       calloutOffsetY: -40
     },
     control: {
-      y: 417.4453713606655,
+      startX: 407.09288299155605,
+      endX: 872.907117008444,
+      y: 435.52834740651394,
       zoneWidth: 120,
       zoneHeight: 52
     }

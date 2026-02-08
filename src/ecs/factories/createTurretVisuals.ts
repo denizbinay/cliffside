@@ -42,7 +42,7 @@ export function createTurretVisuals(options: CreateTurretVisualsOptions): number
   const headHeight = metrics.headHeight || 28;
 
   let mainShape: Phaser.GameObjects.Shape | Phaser.GameObjects.Sprite | Phaser.GameObjects.Image | null = null;
-  let mainSprite: Phaser.GameObjects.Sprite | null = null;
+  const mainSprite: Phaser.GameObjects.Sprite | null = null;
 
   if (showBase && hasTurretBase) {
     const base = scene.add.image(0, 0, "turret_base").setDisplaySize(baseWidth, baseHeight);
