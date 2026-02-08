@@ -11,9 +11,6 @@ const targetables = defineQuery([Position, Health, Faction, EntityType]);
 const TARGETABLE_MASK = ENTITY_TYPE.UNIT | ENTITY_TYPE.TURRET;
 const ATTACKER_MASK = ENTITY_TYPE.UNIT | ENTITY_TYPE.TURRET;
 
-// Buffer for spatial query to account for edge-to-edge targeting (unit radii)
-const TARGETING_RADIUS_BUFFER = 60;
-
 export function createTargetingSystem(): (world: GameWorld) => GameWorld {
   const spatial = new SpatialHash1D(100);
 
@@ -48,8 +45,7 @@ export function createTargetingSystem(): (world: GameWorld) => GameWorld {
 
       // Query spatial hash for potential targets in range
       // We query slightly larger than range to be safe, or just range
-      const effectiveRange = myRange + (Collision.radius[eid] || 0) + TARGETING_RADIUS_BUFFER;
-      for (const otherEid of spatial.queryRadius(myX, effectiveRange)) {
+      for (const otherEid of spatial.queryRadius(myX, myRange)) {
         if (otherEid === eid) continue;
 
         // Basic filter
