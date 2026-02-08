@@ -4,6 +4,19 @@ Common pitfalls and lessons learned from development.
 
 ---
 
+## Determinism
+
+**Never use in `src/sim` or `src/ecs`:**
+- `Math.random()` - Use `ctx.world.sim.rng` instead
+- `Date.now()` or `performance.now()` - Use tick-based timing
+- `setTimeout` / `setInterval` - Use SimClock accumulator
+
+**Always route HP changes through `DamagePipeline`** - never mutate `Health.current` directly.
+
+See [simulation.md](./simulation.md) for full determinism rules.
+
+---
+
 ## Sprite Sheet Animations & Bounding Box Data
 
 ### The Problem
@@ -37,9 +50,8 @@ Using these collision coordinates as sprite extraction regions results in:
 ### The Solution
 
 Our sprite sheets have a consistent structure:
-- **Grid**: 4 columns x 7 rows = 28 frames
+- **Grid**: 4 columns
 - **Frame size**: 768px width x 448px height
-- **Total sheet**: 3072px x 3136px
 - **Alpha transparency**: Yes (no chroma keying needed)
 
 To extract frames correctly:
