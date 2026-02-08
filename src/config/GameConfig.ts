@@ -166,7 +166,7 @@ export const COMBAT_CONFIG: CombatConfig = {
 
 export const PHASE_LABELS: readonly string[] = ["Early", "Mid", "Late", "Final"];
 
-export const LAYOUT_STORAGE_KEY = "layoutProfileV9";
+export const LAYOUT_STORAGE_KEY = "layoutProfileV10";
 
 export function createDefaultLayoutProfile(): LayoutProfile {
   return {
@@ -217,15 +217,15 @@ export function createDefaultLayoutProfile(): LayoutProfile {
       scale: 0.51
     },
     turret: {
-      x: 242.0989143546442,
-      y: 496.24849215922796,
+      x: 269.1194209891436,
+      y: 476.17611580217124,
       showBase: false,
-      baseWidth: 108.66107764974379,
-      baseHeight: 90.55089804145317,
-      headWidth: 126.77125725803444,
-      headHeight: 126.77125725803444,
-      hpOffsetX: -2.29310776107053,
-      hpOffsetY: -102.83636191618871,
+      baseWidth: 66.5777025179655,
+      baseHeight: 55.48141876497127,
+      headWidth: 77.67398627095976,
+      headHeight: 77.67398627095976,
+      hpOffsetX: 6.199051466914966,
+      hpOffsetY: -68.86772500424661,
       hpWidth: 44,
       hpHeight: 5
     },
@@ -244,7 +244,7 @@ export function createDefaultLayoutProfile(): LayoutProfile {
       endX: 872.907117008444,
       y: 435.52834740651394,
       zoneWidth: 120,
-      zoneHeight: 52
+      zoneHeight: 250
     }
   };
 }

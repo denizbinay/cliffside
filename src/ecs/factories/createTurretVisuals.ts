@@ -28,18 +28,37 @@ export function createTurretVisuals(options: CreateTurretVisualsOptions): number
   container.setDepth(DEPTH.TURRETS);
 
   const hasTurretBase = scene.textures.exists("turret_base");
-  const turretHeadKey = scene.textures.exists("turret_head_keyed")
-    ? "turret_head_keyed"
-    : scene.textures.exists("turret_head")
-      ? "turret_head"
-      : null;
+
+  // Prefer the new high-def guardian sprite if available
+  const hasGuardian = scene.textures.exists("turret_guardian");
+
+  const turretHeadKey = hasGuardian
+    ? "turret_guardian"
+    : scene.textures.exists("turret_head_keyed")
+      ? "turret_head_keyed"
+      : scene.textures.exists("turret_head")
+        ? "turret_head"
+        : null;
+
   const hasTurretHead = Boolean(turretHeadKey);
 
   const showBase = metrics.showBase === true;
   const baseWidth = metrics.baseWidth || 44;
   const baseHeight = metrics.baseHeight || 34;
-  const headWidth = metrics.headWidth || 28;
+
+  // Base dimensions on configuration, but adjust for aspect ratio if using new sprite
+  let headWidth = metrics.headWidth || 28;
   const headHeight = metrics.headHeight || 28;
+
+  if (hasGuardian && turretHeadKey) {
+    const texture = scene.textures.get(turretHeadKey);
+    const sourceImage = texture.getSourceImage();
+    if (sourceImage && sourceImage.width && sourceImage.height) {
+      // Maintain aspect ratio based on height
+      const ar = sourceImage.width / sourceImage.height;
+      headWidth = headHeight * ar;
+    }
+  }
 
   let mainShape: Phaser.GameObjects.Shape | Phaser.GameObjects.Sprite | Phaser.GameObjects.Image | null = null;
   const mainSprite: Phaser.GameObjects.Sprite | null = null;
@@ -64,7 +83,11 @@ export function createTurretVisuals(options: CreateTurretVisualsOptions): number
   const headY = showBase ? -24 : -headHeight * 0.5;
   if (hasTurretHead && turretHeadKey) {
     const head = scene.add.image(0, headY, turretHeadKey).setDisplaySize(headWidth, headHeight);
+
+    // Guardian sprite and legacy sprite both face Right by default
+    // So we only need to flip the AI side to face Left
     head.setFlipX(side === "ai");
+
     container.add(head);
     if (!mainShape) {
       mainShape = head;

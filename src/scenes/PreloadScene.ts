@@ -49,6 +49,7 @@ export default class PreloadScene extends Phaser.Scene {
     // Turret
     this.load.image("turret_head", "turret_head_bow.png");
     this.load.image("turret_head_raw", "turret_head_bow_raw.jpg");
+    this.load.image("turret_guardian", "guardian.png");
 
     // UI / Markers
     this.load.setPath("assets/ui/");

@@ -7,6 +7,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- High-definition turret sprite `guardian.png` (750x499) with dynamic aspect ratio support.
+- Turret visual factory now prefers `guardian.png` if available.
+
+### Changed
+- Updated default layout profile (turret size, position, health bar) and bumped storage key to V10.
+- Turret rendering now calculates width based on the texture's native aspect ratio while preserving configured height.
+- Turret orientation standardized: AI side is always flipped (mirrored), assuming right-facing source assets.
+
+
+### Fixed
+- Capture point detection by increasing zone height to 250px
+
+### Added
 - Dual bridge sprite system: two independent bridge sprites for wider coverage
 - Lane bounds system: explicit startX, endX, y for defining unit lane boundaries
 - Control point bounds: explicit startX, endX, y for control point area
