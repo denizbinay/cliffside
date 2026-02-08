@@ -10,6 +10,8 @@ export class SimClock {
   private accumulatorMs = 0;
   private _elapsedMs = 0;
 
+  public timeScale: number = 1.0;
+
   constructor(options: SimClockOptions = {}) {
     this.stepMs = options.stepMs && options.stepMs > 0 ? options.stepMs : 50;
     this.maxFrameMs = options.maxFrameMs && options.maxFrameMs > 0 ? options.maxFrameMs : 250;
@@ -25,7 +27,10 @@ export class SimClock {
 
   pushFrame(deltaMs: number): void {
     if (!Number.isFinite(deltaMs) || deltaMs <= 0) return;
-    const clamped = Math.min(deltaMs, this.maxFrameMs);
+    const scaledDelta = deltaMs * this.timeScale;
+    // Do not scale maxFrameMs with timeScale to prevent spiral of death (lag)
+    // if the CPU cannot keep up with the requested simulation speed.
+    const clamped = Math.min(scaledDelta, this.maxFrameMs);
     this.accumulatorMs += clamped;
   }
 

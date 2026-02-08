@@ -117,6 +117,7 @@ export default class GameScene extends Phaser.Scene {
   ghostAlpha!: number;
   ghostFormation!: { rows: GhostRow };
   simClock!: SimClock;
+  timeScaleKey!: Phaser.Input.Keyboard.Key;
 
   _controlPoints!: ControlPoint[];
 
@@ -205,6 +206,10 @@ export default class GameScene extends Phaser.Scene {
     this.layoutDevTool.setup();
     this.unitDevTool = new UnitDevTool(this);
     this.unitDevTool.setup();
+
+    if (this.input.keyboard) {
+      this.timeScaleKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.T);
+    }
 
     this.events.once("shutdown", () => {
       this.ecsBridge.destroy();
@@ -364,6 +369,13 @@ export default class GameScene extends Phaser.Scene {
   update(_: number, deltaMs: number): void {
     this.layoutDevTool.handleInput();
     this.unitDevTool.handleInput();
+
+    if (this.timeScaleKey && Phaser.Input.Keyboard.JustDown(this.timeScaleKey)) {
+      this.simClock.timeScale = this.simClock.timeScale === 1.0 ? 2.0 : 1.0;
+      // eslint-disable-next-line no-console
+      console.log(`Time scale: ${this.simClock.timeScale}x`);
+      this.events.emit("log", { type: "system", text: `Time scale: ${this.simClock.timeScale}x` });
+    }
     if (this.layoutDevTool.enabled) {
       this.emitUiState();
       return;

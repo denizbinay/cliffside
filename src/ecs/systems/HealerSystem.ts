@@ -2,6 +2,7 @@ import { defineQuery } from "bitecs";
 import {
   Animation,
   ANIM_ACTION,
+  Collision,
   Combat,
   EntityType,
   Faction,
@@ -89,6 +90,12 @@ export function createHealerSystem(
       let speed = Velocity.baseSpeed[eid];
       if (StatusEffects.slowTimer[eid] > 0) {
         speed *= StatusEffects.slowPower[eid];
+      }
+
+      // Check if blocked by enemy collision
+      if (Collision.blockedBy[eid] !== 0) {
+        Animation.currentAction[eid] = ANIM_ACTION.IDLE;
+        continue;
       }
 
       const enemyFaction = myFaction === FACTION.PLAYER ? FACTION.AI : FACTION.PLAYER;

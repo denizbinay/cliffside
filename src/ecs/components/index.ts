@@ -1,4 +1,5 @@
 export { Animation, ANIM_ACTION } from "./Animation";
+export { Collision } from "./Collision";
 export { Combat } from "./Combat";
 export { Death } from "./Death";
 export { EntityType } from "./EntityType";

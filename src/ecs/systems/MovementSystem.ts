@@ -2,6 +2,7 @@ import { defineQuery } from "bitecs";
 import {
   Animation,
   ANIM_ACTION,
+  Collision,
   EntityType,
   Faction,
   FACTION,
@@ -48,6 +49,12 @@ export function createMovementSystem(
 
       if (StatusEffects.stunTimer[eid] > 0) continue;
       if (Target.entityId[eid] !== 0) continue;
+
+      // Check if blocked by enemy collision
+      if (Collision.blockedBy[eid] !== 0) {
+        Animation.currentAction[eid] = ANIM_ACTION.IDLE;
+        continue;
+      }
 
       let speed = Velocity.baseSpeed[eid];
       if (StatusEffects.slowTimer[eid] > 0) {

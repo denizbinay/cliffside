@@ -58,7 +58,7 @@ export function createTargetingSystem(): (world: GameWorld) => GameWorld {
           sourceEid: eid,
           targetEid: otherEid,
           sourceX: myX,
-          sourceY: 0, // 1D for now
+          sourceY: Position.y[eid],
           maxRange: myRange,
           requiresVision: true,
           isSpell: false, // Auto-attacks are not spells usually

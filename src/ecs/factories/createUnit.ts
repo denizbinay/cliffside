@@ -2,6 +2,7 @@ import { addEntity } from "bitecs";
 import { createUnitArchetype } from "../archetypes/unitArchetype";
 import {
   Animation,
+  Collision,
   Combat,
   Death,
   Faction,
@@ -87,6 +88,9 @@ export function createUnit(world: GameWorld, options: CreateUnitOptions): number
   UnitConfig.typeIndex[eid] = configStore?.getUnitIndex(config.id) ?? 0;
   UnitConfig.size[eid] = size;
   UnitConfig.color[eid] = config.color;
+
+  Collision.radius[eid] = size / 2;
+  Collision.blockedBy[eid] = 0;
 
   Presence.baseValue[eid] = config.presence;
   Presence.multiplier[eid] = presenceMult;

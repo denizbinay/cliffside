@@ -1,6 +1,7 @@
 import { addComponent } from "bitecs";
 import {
   Animation,
+  Collision,
   Combat,
   Death,
   EntityType,
@@ -32,7 +33,8 @@ export const UNIT_COMPONENTS = [
   UnitConfig,
   Presence,
   Death,
-  EntityType
+  EntityType,
+  Collision
 ];
 
 export function createUnitArchetype(world: GameWorld, eid: number): void {

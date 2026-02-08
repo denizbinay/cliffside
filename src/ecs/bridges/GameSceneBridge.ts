@@ -4,6 +4,7 @@ import { initializePipelineHooks } from "../../sim/PipelineHooks";
 import {
   createCombatSystem,
   createCleanupSystem,
+  createCollisionSystem,
   createControlPointSystem,
   createCooldownSystem,
   createFlashEffectSystem,
@@ -220,6 +221,7 @@ export class GameSceneBridge {
     );
 
     this.scheduler.register("displacement", createDisplacementSystem(), SYSTEM_PRIORITY.MOVEMENT - 1);
+    this.scheduler.register("collision", createCollisionSystem(), SYSTEM_PRIORITY.MOVEMENT - 0.5);
     this.scheduler.register("movement", createMovementSystem(getCastleX), SYSTEM_PRIORITY.MOVEMENT);
 
     this.scheduler.register("combat", createCombatSystem(this.world, this.configStore), SYSTEM_PRIORITY.COMBAT);

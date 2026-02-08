@@ -1,4 +1,5 @@
 export { SystemScheduler } from "./SystemScheduler";
+export { createCollisionSystem } from "./CollisionSystem";
 export { createMovementSystem } from "./MovementSystem";
 export { createTargetingSystem } from "./TargetingSystem";
 export { createControlPointSystem } from "./ControlPointSystem";
