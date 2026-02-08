@@ -151,42 +151,42 @@ export function createDefaultLayoutProfile(): LayoutProfile {
   return {
     mirrorMode: true,
     castle: {
-      playerX: 66.11289364230541,
-      aiX: 1213.8871063576946,
-      anchorY: 291.6164943553179,
-      baseWidth: CASTLE_METRICS.baseWidth,
-      baseHeight: CASTLE_METRICS.baseHeight,
-      baseCenterYOffset: CASTLE_METRICS.baseCenterYOffset,
-      towerWidth: CASTLE_METRICS.towerWidth,
-      towerHeight: CASTLE_METRICS.towerHeight,
-      towerOffsetY: CASTLE_METRICS.towerOffsetY,
-      bannerOffsetX: CASTLE_METRICS.bannerOffsetX,
-      bannerOffsetY: CASTLE_METRICS.bannerOffsetY,
-      hpOffsetX: CASTLE_METRICS.hpOffsetX,
-      hpOffsetY: CASTLE_METRICS.hpOffsetY,
-      hpWidth: CASTLE_METRICS.hpWidth,
-      hpHeight: CASTLE_METRICS.hpHeight
+      playerX: 33.40938799762329,
+      aiX: 1246.5906120023767,
+      anchorY: 240.6598692810458,
+      baseWidth: 260,
+      baseHeight: 320,
+      baseCenterYOffset: 28,
+      towerWidth: 180,
+      towerHeight: 135.13202741322908,
+      towerOffsetY: -56,
+      bannerOffsetX: 20,
+      bannerOffsetY: -76,
+      hpOffsetX: 4.563279857397518,
+      hpOffsetY: -64.00118835412954,
+      hpWidth: 120,
+      hpHeight: 10
     },
     decks: {
       foundation: {
-        leftStart: -0.9007724301842046,
-        leftEnd: 140.1152703505645,
-        rightStart: 1139.8847296494355,
-        rightEnd: 1280.9007724301841,
-        topY: 397.3348544266191,
-        height: 84
+        leftStart: -7.745692216280462,
+        leftEnd: 235.18360071301254,
+        rightStart: 1044.8163992869875,
+        rightEnd: 1287.7456922162805,
+        topY: 419.39070707070704,
+        height: 160
       },
       spawn: {
-        leftStart: 69.13131313131312,
-        leftEnd: 213.0469399881164,
-        rightStart: 1066.9530600118835,
-        rightEnd: 1210.8686868686868,
-        topY: 418.60045157456915,
-        height: 60
+        leftStart: 180.17112299465242,
+        leftEnd: 359.2382650029708,
+        rightStart: 920.7617349970292,
+        rightEnd: 1099.8288770053475,
+        topY: 436.85357100415905,
+        height: 118
       }
     },
     bridge: {
-      topY: 411.755531788473,
+      topY: 435.33247771836005,
       plankOffsetY: 24,
       thickness: 14,
       showPillars: false,
@@ -199,25 +199,25 @@ export function createDefaultLayoutProfile(): LayoutProfile {
       pillarStep: 90
     },
     turret: {
-      sideInset: 26.366013071895452,
-      yOffset: 9.61913250148541,
+      sideInset: 59.830065359477146,
+      yOffset: 33.9566250742721,
       showBase: false,
-      baseWidth: 88.28363730688557,
-      baseHeight: 68.21917428259343,
-      headWidth: 56.180496468018134,
-      headHeight: 56.180496468018134,
-      hpOffsetX: 0,
-      hpOffsetY: -36,
+      baseWidth: 108.66107764974379,
+      baseHeight: 90.55089804145317,
+      headWidth: 126.77125725803444,
+      headHeight: 126.77125725803444,
+      hpOffsetX: -1.521093285799111,
+      hpOffsetY: -109.01247771836,
       hpWidth: 44,
       hpHeight: 5
     },
     units: {
-      spawnInset: 80.30897207367796,
-      laneY: 410.9949851455734,
+      spawnInset: -78.64527629233508,
+      laneY: 442.93794414735595,
       calloutOffsetY: -40
     },
     control: {
-      y: 395.3895187165776,
+      y: 417.4453713606655,
       zoneWidth: 120,
       zoneHeight: 52
     }

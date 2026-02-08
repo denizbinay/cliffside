@@ -63,9 +63,7 @@ export function createTargetingSystem(): (world: GameWorld) => GameWorld {
           requiresVision: true,
           isSpell: false, // Auto-attacks are not spells usually
           isAttack: true,
-          ignoreFaction: false,
-          sourceRadius: Collision.radius[eid] || 0,
-          targetRadius: Collision.radius[otherEid] || 0
+          ignoreFaction: false
         });
 
         if (!eligibility.eligible) continue;

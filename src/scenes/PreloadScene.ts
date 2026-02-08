@@ -29,6 +29,8 @@ export default class PreloadScene extends Phaser.Scene {
   }
 
   preload(): void {
+    this.createLoadingUI();
+
     // Environment
     this.load.setPath("assets/environment/");
     this.load.image("bg_sky", "bg_sky_mountains.png");
@@ -97,6 +99,86 @@ export default class PreloadScene extends Phaser.Scene {
           }
         }
       });
+    });
+  }
+
+  createLoadingUI(): void {
+    const width = this.cameras.main.width;
+    const height = this.cameras.main.height;
+    const centerX = width / 2;
+    const centerY = height / 2;
+
+    // 1. Background
+    const bg = this.add.graphics();
+    bg.fillStyle(0x1b1f2a, 1);
+    bg.fillRect(0, 0, width, height);
+
+    // 2. Title Text
+    const titleText = this.add.text(centerX, centerY - 100, "CLIFFSIDE CASTLE CONQUEST", {
+      fontFamily: "monospace",
+      fontSize: "48px",
+      fontStyle: "bold",
+      color: "#ffffff"
+    });
+    titleText.setOrigin(0.5, 0.5);
+
+    // 3. Spinner (Rotating Square)
+    const spinner = this.add.graphics();
+    spinner.lineStyle(4, 0xffffff, 1);
+    spinner.strokeRect(-20, -20, 40, 40);
+    spinner.x = centerX;
+    spinner.y = centerY - 20;
+
+    this.tweens.add({
+      targets: spinner,
+      angle: 360,
+      duration: 1500,
+      repeat: -1,
+      ease: "Linear"
+    });
+
+    // 4. Progress Bar Container
+    const barWidth = 400;
+    const barHeight = 30;
+    const barX = centerX - barWidth / 2;
+    const barY = centerY + 60;
+
+    const progressBarBox = this.add.graphics();
+    progressBarBox.lineStyle(2, 0xffffff, 0.8);
+    progressBarBox.strokeRect(barX, barY, barWidth, barHeight);
+
+    // 5. Progress Bar Fill
+    const progressBar = this.add.graphics();
+
+    // 6. Loading Text & Percent
+    const loadingText = this.add.text(centerX, barY + 50, "Loading...", {
+      fontFamily: "monospace",
+      fontSize: "18px",
+      color: "#aaaaaa"
+    });
+    loadingText.setOrigin(0.5, 0.5);
+
+    const percentText = this.add.text(centerX, barY + barHeight / 2, "0%", {
+      fontFamily: "monospace",
+      fontSize: "14px",
+      color: "#ffffff"
+    });
+    percentText.setOrigin(0.5, 0.5);
+
+    // 7. Hook into Loader Events
+    this.load.on("progress", (value: number) => {
+      progressBar.clear();
+      progressBar.fillStyle(0xff8c00, 1);
+      progressBar.fillRect(barX + 2, barY + 2, (barWidth - 4) * value, barHeight - 4);
+      percentText.setText(`${Math.round(value * 100)}%`);
+    });
+
+    this.load.on("fileprogress", (file: Phaser.Loader.File) => {
+      loadingText.setText(`Loading: ${file.key}`);
+    });
+
+    this.load.on("complete", () => {
+      loadingText.setText("Preparing Game...");
     });
   }
 
