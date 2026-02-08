@@ -74,7 +74,14 @@ export function createUnitVisuals(
     const sizeScale = animatedProfile.sizeScale || 2;
     const widthScale = animatedProfile.widthScale || 1;
     const heightScale = animatedProfile.heightScale || 1;
-    mainSprite.setDisplaySize(size * sizeScale * widthScale, size * sizeScale * heightScale);
+
+    // Fix: Use setScale instead of setDisplaySize to preserve aspect ratio.
+    // The source frame is 768x448. We scale based on height to match target size.
+    const FRAME_HEIGHT = 448;
+    const targetHeight = size * sizeScale * heightScale;
+    const scale = targetHeight / FRAME_HEIGHT;
+
+    mainSprite.setScale(scale * widthScale, scale * heightScale);
     mainSprite.setOrigin(animatedProfile.originX ?? 0.5, animatedProfile.originY ?? 0.7);
     mainSprite.setFlipX(side === "ai");
     container.add(mainSprite);
