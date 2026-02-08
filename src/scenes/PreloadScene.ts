@@ -272,89 +272,24 @@ export default class PreloadScene extends Phaser.Scene {
     const rawBoxes = this.cache.json.get(boxesKey);
     if (!Array.isArray(rawBoxes) || rawBoxes.length === 0) return;
 
-    interface BoxEntry {
-      frameIndex?: number;
-      row?: number;
-      col?: number;
-    }
-
-    // Sort boxes by frameIndex to get correct frame ordering
-    const boxes: BoxEntry[] = rawBoxes
-      .filter((entry: BoxEntry) => Number.isFinite(entry?.frameIndex))
-      .sort((a: BoxEntry, b: BoxEntry) => (a.frameIndex ?? 0) - (b.frameIndex ?? 0));
-    if (!boxes.length) return;
-
     const sourceImage = this.textures.get(sourceKey).getSourceImage() as HTMLImageElement;
     if (!sourceImage?.width || !sourceImage?.height) return;
 
     // Fixed grid layout: 4 columns x 7 rows, 768x448 per frame
     // These sprite sheets always have this structure with alpha transparency
-    const GRID_COLS = 4;
     const FRAME_WIDTH = 768;
     const FRAME_HEIGHT = Math.floor(sourceImage.height / 7); // Calculate from actual height
 
-    const frameCount = boxes.length;
-
-    // Extract full frame cells from the grid - alpha channel handles transparency
-    this.createPackedSpriteSheet(outputKey, FRAME_WIDTH, FRAME_HEIGHT, frameCount, (ctx, index, destX, destY) => {
-      const box = boxes[index];
-      const col = box.col ?? index % GRID_COLS;
-      const row = box.row ?? Math.floor(index / GRID_COLS);
-
-      const srcX = col * FRAME_WIDTH;
-      const srcY = row * FRAME_HEIGHT;
-
-      ctx.drawImage(sourceImage, srcX, srcY, FRAME_WIDTH, FRAME_HEIGHT, destX, destY, FRAME_WIDTH, FRAME_HEIGHT);
-    });
-  }
-
-  createPackedSpriteSheet(
-    outputKey: string,
-    frameWidth: number,
-    frameHeight: number,
-    frameCount: number,
-    drawFrame: (ctx: CanvasRenderingContext2D, index: number, frameX: number, frameY: number) => void
-  ): void {
-    if (
-      !Number.isFinite(frameWidth) ||
-      !Number.isFinite(frameHeight) ||
-      frameWidth <= 0 ||
-      frameHeight <= 0 ||
-      frameCount <= 0
-    )
-      return;
-
-    const maxTextureSize = Math.max(
-      1024,
-      (this.game?.renderer as unknown as { maxTextureSize?: number })?.maxTextureSize || 4096
-    );
-    const columns = Math.max(1, Math.min(frameCount, Math.floor(maxTextureSize / frameWidth) || 1));
-    const rows = Math.ceil(frameCount / columns);
-    const sheetWidth = frameWidth * columns;
-    const sheetHeight = frameHeight * rows;
-
-    const canvasKey = `${outputKey}_canvas`;
-    const sheetCanvas = this.textures.createCanvas(canvasKey, sheetWidth, sheetHeight);
-    if (!sheetCanvas) return;
-    const ctx = sheetCanvas.context;
-    ctx.clearRect(0, 0, sheetWidth, sheetHeight);
-
-    for (let index = 0; index < frameCount; index += 1) {
-      const col = index % columns;
-      const row = Math.floor(index / columns);
-      const frameX = col * frameWidth;
-      const frameY = row * frameHeight;
-      drawFrame(ctx, index, frameX, frameY);
-    }
-
-    sheetCanvas.refresh();
-    this.textures.addSpriteSheet(outputKey, sheetCanvas.getSourceImage() as any, {
-      frameWidth,
-      frameHeight,
+    // The boxes generally correspond 1:1 to the grid frames in order
+    // We can directly use the source image as the spritesheet texture
+    // instead of creating a new canvas and copying pixels.
+    this.textures.addSpriteSheet(outputKey, sourceImage, {
+      frameWidth: FRAME_WIDTH,
+      frameHeight: FRAME_HEIGHT,
       margin: 0,
       spacing: 0,
       startFrame: 0,
-      endFrame: frameCount - 1
+      endFrame: rawBoxes.length - 1
     });
   }
 
