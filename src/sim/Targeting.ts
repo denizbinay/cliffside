@@ -135,6 +135,8 @@ export interface EligibilityContext {
   isSpell: boolean;
   isAttack: boolean;
   ignoreFaction: boolean;
+  sourceRadius?: number;
+  targetRadius?: number;
 }
 
 export interface EligibilityResult {
@@ -196,7 +198,15 @@ export function checkEligibility(ctx: EligibilityContext): EligibilityResult {
     const dx = Position.x[ctx.targetEid] - ctx.sourceX;
     const dy = Position.y[ctx.targetEid] - ctx.sourceY;
     const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist > ctx.maxRange) {
+
+    let effectiveRange = ctx.maxRange;
+    if (ctx.isAttack) {
+      const srcR = ctx.sourceRadius || 0;
+      const tgtR = ctx.targetRadius || 0;
+      effectiveRange += srcR + tgtR;
+    }
+
+    if (dist > effectiveRange) {
       return { eligible: false, reason: "out_of_range" };
     }
   }
@@ -257,6 +267,7 @@ export function isTargetableEnemy(sourceEid: number, targetEid: number, range: n
  */
 export function isAliveInRange(sourceEid: number, targetEid: number, range: number): boolean {
   if (Health.current[targetEid] <= 0) return false;
+  // This is a quick check, ideally it would also use radii but it's used for AI movement checks mostly
   const dx = Position.x[targetEid] - Position.x[sourceEid];
   return Math.abs(dx) <= range;
 }

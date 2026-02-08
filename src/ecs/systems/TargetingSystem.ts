@@ -1,5 +1,5 @@
 import { defineQuery } from "bitecs";
-import { Combat, EntityType, Faction, Health, Position, Role, ROLE, Target } from "../components";
+import { Combat, EntityType, Faction, Health, Position, Role, ROLE, Target, Collision } from "../components";
 import { ENTITY_TYPE } from "../constants";
 import { SpatialHash1D } from "../spatial/SpatialHash";
 import type { GameWorld } from "../world";
@@ -10,6 +10,9 @@ const targetables = defineQuery([Position, Health, Faction, EntityType]);
 
 const TARGETABLE_MASK = ENTITY_TYPE.UNIT | ENTITY_TYPE.TURRET;
 const ATTACKER_MASK = ENTITY_TYPE.UNIT | ENTITY_TYPE.TURRET;
+
+// Buffer for spatial query to account for edge-to-edge targeting (unit radii)
+const TARGETING_RADIUS_BUFFER = 60;
 
 export function createTargetingSystem(): (world: GameWorld) => GameWorld {
   const spatial = new SpatialHash1D(100);
@@ -45,7 +48,8 @@ export function createTargetingSystem(): (world: GameWorld) => GameWorld {
 
       // Query spatial hash for potential targets in range
       // We query slightly larger than range to be safe, or just range
-      for (const otherEid of spatial.queryRadius(myX, myRange)) {
+      const effectiveRange = myRange + (Collision.radius[eid] || 0) + TARGETING_RADIUS_BUFFER;
+      for (const otherEid of spatial.queryRadius(myX, effectiveRange)) {
         if (otherEid === eid) continue;
 
         // Basic filter
@@ -63,7 +67,9 @@ export function createTargetingSystem(): (world: GameWorld) => GameWorld {
           requiresVision: true,
           isSpell: false, // Auto-attacks are not spells usually
           isAttack: true,
-          ignoreFaction: false
+          ignoreFaction: false,
+          sourceRadius: Collision.radius[eid] || 0,
+          targetRadius: Collision.radius[otherEid] || 0
         });
 
         if (!eligibility.eligible) continue;
