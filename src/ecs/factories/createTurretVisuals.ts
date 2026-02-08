@@ -1,6 +1,7 @@
 import { Position, Render } from "../components";
 import type { RenderStore } from "../stores/RenderStore";
 import type { LayoutTurretProfile, Side } from "../../types";
+import { DEPTH } from "../../config/GameConfig";
 import type { RenderStoreEntry, StatusDotsContainer } from "../stores/RenderStore";
 
 export interface CreateTurretVisualsOptions {
@@ -24,7 +25,7 @@ export function createTurretVisuals(options: CreateTurretVisualsOptions): number
   const y = Position.y[eid];
 
   const container = scene.add.container(x, y);
-  container.setDepth(3);
+  container.setDepth(DEPTH.TURRETS);
 
   const hasTurretBase = scene.textures.exists("turret_base");
   const turretHeadKey = scene.textures.exists("turret_head_keyed")
@@ -86,8 +87,8 @@ export function createTurretVisuals(options: CreateTurretVisualsOptions): number
 
   const healthBar = scene.add.rectangle(0, 0, healthBarWidth, healthBarHeight, 0x2d2f38);
   const healthFill = scene.add.rectangle(0, 0, healthBarWidth, Math.max(2, healthBarHeight - 1), 0x9ec9f0);
-  healthBar.setDepth(4);
-  healthFill.setDepth(4);
+  healthBar.setDepth(DEPTH.TURRET_HP);
+  healthFill.setDepth(DEPTH.TURRET_HP);
 
   const statusDots = createEmptyStatusDots(scene);
 

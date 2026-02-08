@@ -1,6 +1,7 @@
 import { Position, Render } from "../components";
 import type { RenderStore } from "../stores/RenderStore";
 import type { CastleMode, LayoutProfile, Side } from "../../types";
+import { DEPTH } from "../../config/GameConfig";
 import type { RenderStoreEntry, StatusDotsContainer } from "../stores/RenderStore";
 
 interface CastleVariantInfo {
@@ -53,7 +54,7 @@ export function createCastleVisuals(options: CreateCastleVisualsOptions): number
   const hpOffsetY = layoutProfile.castle.hpOffsetY;
 
   const container = scene.add.container(x, y);
-  container.setDepth(6);
+  container.setDepth(DEPTH.CASTLE);
 
   let mainShape: Phaser.GameObjects.Shape | Phaser.GameObjects.Sprite | Phaser.GameObjects.Image;
   let mainSprite: Phaser.GameObjects.Sprite | null = null;
@@ -61,8 +62,11 @@ export function createCastleVisuals(options: CreateCastleVisualsOptions): number
   if (hasCastleBase) {
     const base = scene.add.image(0, baseCenterYOffset, castleKey).setDisplaySize(baseWidth, baseHeight);
     base.setFlipX(side === "player");
-    const teamTint = side === "player" ? 0xb5cee6 : 0xe1bbbb;
-    base.setTint(teamTint);
+    // Only apply team tint in legacy mode
+    if (castleMode === "legacy") {
+      const teamTint = side === "player" ? 0xb5cee6 : 0xe1bbbb;
+      base.setTint(teamTint);
+    }
     container.add(base);
     mainShape = base;
   } else {
@@ -75,8 +79,8 @@ export function createCastleVisuals(options: CreateCastleVisualsOptions): number
 
   const healthBar = scene.add.rectangle(0, 0, hpWidth, hpHeight, 0x10151f, 0.92).setStrokeStyle(1, 0xe4d6b8, 0.9);
   const healthFill = scene.add.rectangle(0, 0, hpWidth, Math.max(2, hpHeight - 4), 0x79d27e);
-  healthBar.setDepth(9);
-  healthFill.setDepth(10);
+  healthBar.setDepth(DEPTH.CASTLE_HP);
+  healthFill.setDepth(DEPTH.CASTLE_HP + 1);
 
   const statusDots = createEmptyStatusDots(scene);
 

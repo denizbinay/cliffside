@@ -274,10 +274,11 @@ export default class LayoutDevTool {
       },
       (dy) => {
         const mult = dy > 0 ? 0.98 : 1.02;
-        profile.castle.baseWidth = Phaser.Math.Clamp(profile.castle.baseWidth * mult, 80, 260);
-        profile.castle.baseHeight = Phaser.Math.Clamp(profile.castle.baseHeight * mult, 110, 320);
-        profile.castle.towerWidth = Phaser.Math.Clamp(profile.castle.towerWidth * mult, 40, 180);
-        profile.castle.towerHeight = Phaser.Math.Clamp(profile.castle.towerHeight * mult, 30, 150);
+        // Wide limits - actual sizing is configured via layout profile
+        profile.castle.baseWidth = Phaser.Math.Clamp(profile.castle.baseWidth * mult, 40, 800);
+        profile.castle.baseHeight = Phaser.Math.Clamp(profile.castle.baseHeight * mult, 30, 600);
+        profile.castle.towerWidth = Phaser.Math.Clamp(profile.castle.towerWidth * mult, 20, 400);
+        profile.castle.towerHeight = Phaser.Math.Clamp(profile.castle.towerHeight * mult, 15, 300);
       }
     );
 

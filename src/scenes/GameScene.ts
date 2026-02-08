@@ -10,6 +10,7 @@ import {
   CONTROL_POINT_CONFIG,
   COMBAT_CONFIG,
   WAVE_CONFIG,
+  DEPTH,
   LAYOUT_STORAGE_KEY,
   createDefaultLayoutProfile
 } from "../config/GameConfig";
@@ -429,7 +430,7 @@ export default class GameScene extends Phaser.Scene {
   createBackground(): void {
     const hasBgSky = this.textures.exists("bg_sky");
 
-    this.add.rectangle(this.width / 2, this.height / 2, this.width, this.height, 0x151922).setDepth(-20);
+    this.add.rectangle(this.width / 2, this.height / 2, this.width, this.height, 0x151922).setDepth(DEPTH.SKYBOX);
 
     const sky = hasBgSky
       ? this.add.image(this.width / 2, this.height / 2, "bg_sky")
@@ -439,11 +440,11 @@ export default class GameScene extends Phaser.Scene {
       const scale = Math.max((this.width + 8) / frame.width, (this.height + 8) / frame.height);
       (sky as Phaser.GameObjects.Image).setScale(scale);
     }
-    sky.setDepth(-18);
+    sky.setDepth(DEPTH.BACKGROUND);
 
     const vignette = this.add
       .rectangle(this.width / 2, this.height / 2, this.width, this.height, 0x0d1016, 0.15)
-      .setDepth(4);
+      .setDepth(DEPTH.UI);
     vignette.setBlendMode(Phaser.BlendModes.MULTIPLY);
   }
 
@@ -474,7 +475,7 @@ export default class GameScene extends Phaser.Scene {
       this.boardLayout.leftFoundationEnd,
       this.foundationDeckY,
       this.foundationDeckHeight,
-      1,
+      DEPTH.PLATFORMS,
       hasPlatform
     );
     this.drawDeckSegment(
@@ -482,7 +483,7 @@ export default class GameScene extends Phaser.Scene {
       this.boardLayout.rightFoundationEnd,
       this.foundationDeckY,
       this.foundationDeckHeight,
-      1,
+      DEPTH.PLATFORMS,
       hasPlatform
     );
     this.drawDeckSegment(
@@ -490,7 +491,7 @@ export default class GameScene extends Phaser.Scene {
       this.platformLeftEnd,
       this.spawnDeckY,
       this.spawnDeckHeight,
-      2,
+      DEPTH.PLATFORMS + 1,
       hasPlatform
     );
     this.drawDeckSegment(
@@ -498,7 +499,7 @@ export default class GameScene extends Phaser.Scene {
       this.platformRightEnd,
       this.spawnDeckY,
       this.spawnDeckHeight,
-      2,
+      DEPTH.PLATFORMS + 1,
       hasPlatform
     );
 
@@ -511,7 +512,7 @@ export default class GameScene extends Phaser.Scene {
           this.add
             .image(x, bridgePlankY, "bridge_plank")
             .setDisplaySize(segmentWidth + 2, bridgeThickness)
-            .setDepth(2)
+            .setDepth(DEPTH.BRIDGE_PLANKS)
         );
       }
     } else {
@@ -519,17 +520,17 @@ export default class GameScene extends Phaser.Scene {
         this.add
           .rectangle(bridgeCenter, bridgePlankY, bridgeWidth, bridgeThickness - 6, 0x3c312c)
           .setStrokeStyle(2, 0x241b18, 1)
-          .setDepth(2)
+          .setDepth(DEPTH.BRIDGE_PLANKS)
       );
       this.addBridgeVisual(
         this.add
           .rectangle(bridgeCenter, bridgePlankY - bridgeThickness * 0.4, bridgeWidth - 16, 6, 0x2a211e)
-          .setDepth(2)
+          .setDepth(DEPTH.BRIDGE_PLANKS)
       );
       this.addBridgeVisual(
         this.add
           .rectangle(bridgeCenter, bridgePlankY + bridgeThickness * 0.4, bridgeWidth - 16, 6, 0x2a211e)
-          .setDepth(2)
+          .setDepth(DEPTH.BRIDGE_PLANKS)
       );
     }
 
@@ -540,11 +541,13 @@ export default class GameScene extends Phaser.Scene {
             this.add
               .image(x, this.bridgePillarY, "bridge_pillar")
               .setDisplaySize(18, this.bridgePillarHeight)
-              .setDepth(2)
+              .setDepth(DEPTH.BRIDGE_PILLARS)
           );
         } else {
           this.addBridgeVisual(
-            this.add.rectangle(x, this.bridgePillarY, 10, this.bridgePillarHeight - 4, 0x2d2522).setDepth(2)
+            this.add
+              .rectangle(x, this.bridgePillarY, 10, this.bridgePillarHeight - 4, 0x2d2522)
+              .setDepth(DEPTH.BRIDGE_PILLARS)
           );
         }
       }
@@ -553,13 +556,19 @@ export default class GameScene extends Phaser.Scene {
     if (this.bridgeShowRopes) {
       if (hasBridgeRope) {
         this.addBridgeVisual(
-          this.add.tileSprite(bridgeCenter, ropeTopY, bridgeWidth, 12, "bridge_rope").setDepth(3).setAlpha(0.9)
+          this.add
+            .tileSprite(bridgeCenter, ropeTopY, bridgeWidth, 12, "bridge_rope")
+            .setDepth(DEPTH.BRIDGE_ROPES)
+            .setAlpha(0.9)
         );
         this.addBridgeVisual(
-          this.add.tileSprite(bridgeCenter, ropeBottomY, bridgeWidth, 12, "bridge_rope").setDepth(3).setAlpha(0.9)
+          this.add
+            .tileSprite(bridgeCenter, ropeBottomY, bridgeWidth, 12, "bridge_rope")
+            .setDepth(DEPTH.BRIDGE_ROPES)
+            .setAlpha(0.9)
         );
       } else {
-        const rope = this.addBridgeVisual(this.add.graphics().setDepth(3));
+        const rope = this.addBridgeVisual(this.add.graphics().setDepth(DEPTH.BRIDGE_ROPES));
         (rope as Phaser.GameObjects.Graphics).lineStyle(3, 0x1b1f27, 0.9);
         this.drawRope(rope as Phaser.GameObjects.Graphics, this.bridgeLeft, this.bridgeRight, ropeTopY - 2, 10);
         this.drawRope(rope as Phaser.GameObjects.Graphics, this.bridgeLeft, this.bridgeRight, ropeBottomY + 2, 10);
@@ -577,21 +586,29 @@ export default class GameScene extends Phaser.Scene {
       const glow =
         this.bridgeShowControlFx && hasControlGlow
           ? (this.addBridgeVisual(
-              this.add.image(x, bridgeY, "control_glow").setDisplaySize(36, 36).setAlpha(0.45).setDepth(3)
+              this.add
+                .image(x, bridgeY, "control_glow")
+                .setDisplaySize(36, 36)
+                .setAlpha(0.45)
+                .setDepth(DEPTH.CONTROL_POINT)
             ) as Phaser.GameObjects.Image)
           : null;
       const rune =
         this.bridgeShowControlFx && hasControlRune
           ? (this.addBridgeVisual(
-              this.add.image(x, bridgeY, "control_rune").setDisplaySize(26, 26).setAlpha(0.85).setDepth(4)
+              this.add
+                .image(x, bridgeY, "control_rune")
+                .setDisplaySize(26, 26)
+                .setAlpha(0.85)
+                .setDepth(DEPTH.CONTROL_POINT)
             ) as Phaser.GameObjects.Image)
           : null;
       const marker = this.addBridgeVisual(
         this.add.circle(x, bridgeY, 10, 0x323844, 0.8).setStrokeStyle(2, 0x5b616e, 1)
       ) as Phaser.GameObjects.Arc;
       const core = this.addBridgeVisual(this.add.circle(x, bridgeY, 5, 0x7b8598, 0.9)) as Phaser.GameObjects.Arc;
-      marker.setDepth(4);
-      core.setDepth(5);
+      marker.setDepth(DEPTH.CONTROL_POINT);
+      core.setDepth(DEPTH.CONTROL_POINT + 1);
       this._controlPoints.push({
         index: i,
         x,
@@ -949,7 +966,7 @@ export default class GameScene extends Phaser.Scene {
       for (let i = 0; i < count; i += 1) {
         const container = this.add.container(0, 0);
         container.setAlpha(this.ghostAlpha);
-        container.setDepth(1);
+        container.setDepth(DEPTH.UNITS);
         container.setVisible(false);
         this.ghostFormation.rows[row].push({ container, currentType: null });
       }

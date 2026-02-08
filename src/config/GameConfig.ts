@@ -29,6 +29,23 @@ export const SIDE: SideConstants = {
  * - "unified": Single castle asset (castle.png) used for both sides, flipped for AI
  * - "legacy": Separate assets per side with variant support
  */
+export const DEPTH = {
+  SKYBOX: -100,
+  BACKGROUND: -50,
+  CASTLE: -10,
+  CASTLE_HP: -5,
+  PLATFORMS: 0,
+  BRIDGE_PILLARS: 5,
+  BRIDGE_PLANKS: 6,
+  BRIDGE_ROPES: 7,
+  CONTROL_POINT: 10,
+  TURRETS: 20,
+  TURRET_HP: 21,
+  UNITS: 30,
+  UNIT_HP: 31,
+  UI: 100
+};
+
 export const CASTLE_MODE: CastleMode = "unified";
 
 export const CASTLE_VARIANTS: readonly CastleVariant[] = [
@@ -51,7 +68,7 @@ export const CASTLE_VARIANTS: readonly CastleVariant[] = [
 
 export const CASTLE_METRICS: CastleMetrics = {
   baseWidth: 132,
-  baseHeight: 176,
+  baseHeight: 88,
   baseCenterYOffset: 28,
   baseFootInset: 10,
   towerWidth: 88,
@@ -150,20 +167,20 @@ export const COMBAT_CONFIG: CombatConfig = {
 
 export const PHASE_LABELS: readonly string[] = ["Early", "Mid", "Late", "Final"];
 
-export const LAYOUT_STORAGE_KEY = "layoutProfileV4";
+export const LAYOUT_STORAGE_KEY = "layoutProfileV6";
 
 export function createDefaultLayoutProfile(): LayoutProfile {
   return {
     mirrorMode: true,
     castle: {
-      playerX: 33.40938799762329,
-      aiX: 1246.5906120023767,
-      anchorY: 240.6598692810458,
-      baseWidth: 260,
-      baseHeight: 320,
+      playerX: 115.54842543077845,
+      aiX: 1164.4515745692215,
+      anchorY: 306.82742721330965,
+      baseWidth: 772.4799544945374,
+      baseHeight: 579.3599658709031,
       baseCenterYOffset: 28,
-      towerWidth: 180,
-      towerHeight: 135.13202741322908,
+      towerWidth: 386.2399772472687,
+      towerHeight: 289.67998293545156,
       towerOffsetY: -56,
       bannerOffsetX: 20,
       bannerOffsetY: -76,

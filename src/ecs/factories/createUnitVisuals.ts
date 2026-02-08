@@ -1,4 +1,4 @@
-import { UNIT_SIZE } from "../../config/GameConfig";
+import { UNIT_SIZE, DEPTH } from "../../config/GameConfig";
 import { UNIT_ANIMATION_PROFILES } from "../../data/unitAnimationProfiles";
 import { Position, Render, UnitConfig } from "../components";
 import type { RenderStore } from "../stores/RenderStore";
@@ -60,7 +60,7 @@ export function createUnitVisuals(
   const size = UnitConfig.size[eid] || UNIT_SIZE[config.role] || UNIT_SIZE.default;
   const x = Position.x[eid];
   const y = Position.y[eid];
-  const depth = Render.depth[eid] || 4;
+  const depth = Render.depth[eid] || DEPTH.UNITS;
 
   const container = scene.add.container(x, y);
   container.setDepth(depth);
@@ -93,8 +93,8 @@ export function createUnitVisuals(
     : -30;
   const healthBar = scene.add.rectangle(x, y + healthBarOffsetY, size, 5, 0x2d2f38);
   const healthFill = scene.add.rectangle(x, y + healthBarOffsetY, size, 5, 0x76c27a);
-  healthBar.setDepth(depth);
-  healthFill.setDepth(depth);
+  healthBar.setDepth(DEPTH.UNIT_HP);
+  healthFill.setDepth(DEPTH.UNIT_HP);
 
   const storeIndex = renderStore.create({
     container,
