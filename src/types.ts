@@ -128,7 +128,7 @@ export interface WaveScheduleEntry {
 }
 
 export interface WaveConfig {
-  readonly lockSeconds: number;
+  readonly maxWaves: number;
   readonly supply: number;
   readonly slots: WaveSlots;
   readonly stagger: number;
@@ -416,7 +416,6 @@ export interface UiState {
   wave: {
     countdown: number;
     interval: number;
-    locked: boolean;
     number: number;
     phaseLabel: string;
     stageIndex: number;

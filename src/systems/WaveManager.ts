@@ -46,7 +46,6 @@ export default class WaveManager {
   waveStagger: number;
   waveSchedule: readonly { time: number; interval: number }[];
   waveCountdown: number;
-  waveLocked: boolean;
   waveNumber: number;
   playerDraft: WaveDraft;
   aiDraft: WaveDraft;
@@ -61,7 +60,6 @@ export default class WaveManager {
     this.waveStagger = WAVE_CONFIG.stagger;
     this.waveSchedule = WAVE_CONFIG.schedule;
     this.waveCountdown = this.getWaveInterval(0);
-    this.waveLocked = false;
     this.waveNumber = 0;
 
     this.playerDraft = this.createDraft();
@@ -118,7 +116,6 @@ export default class WaveManager {
 
   selectStance(payload: string | { id: string }, side: Side): boolean {
     if (this.scene.isGameOver) return false;
-    if (this.waveLocked) return false;
     const id = typeof payload === "string" ? payload : payload.id;
     if (!STANCES[id as StanceId]) return false;
     this.waveStance[side] = id as StanceId;
@@ -167,7 +164,6 @@ export default class WaveManager {
     stageIndex: number
   ): boolean {
     if (this.scene.isGameOver) return false;
-    if (this.waveLocked) return false;
 
     const type = typeof payload === "string" ? payload : payload.id;
     const fromShop = typeof payload === "object" && payload.fromShop === true;
@@ -231,7 +227,6 @@ export default class WaveManager {
     side: Side
   ): boolean {
     if (this.scene.isGameOver) return false;
-    if (this.waveLocked) return false;
 
     const type = typeof payload === "string" ? payload : payload.id;
     const slot = typeof payload === "string" ? null : payload.slot || null;
@@ -264,7 +259,6 @@ export default class WaveManager {
 
   moveQueuedUnit(payload: MovePayload | null, side: Side): boolean {
     if (this.scene.isGameOver) return false;
-    if (this.waveLocked) return false;
     if (!payload?.from || !payload?.to) return false;
 
     const draft = this.getDraft(side);

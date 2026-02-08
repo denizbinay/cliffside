@@ -11,7 +11,6 @@ interface ShopState {
 
 interface ShopScene {
   isGameOver: boolean;
-  waveLocked: boolean;
   events: { emit: (event: string, ...args: unknown[]) => void };
 }
 
@@ -108,7 +107,6 @@ export default class ShopManager {
 
   requestReroll(side: Side, economy: EconomySystem, stageIndex: number): boolean {
     if (this.scene.isGameOver) return false;
-    if (this.scene.waveLocked) return false;
     const cost = this.getRerollCost(side);
     if (!economy.spend(side, cost)) return false;
     this.shops[side].rerolls += 1;

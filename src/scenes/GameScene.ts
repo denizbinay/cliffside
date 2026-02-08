@@ -289,12 +289,7 @@ export default class GameScene extends Phaser.Scene {
   set waveCountdown(v: number) {
     this.waveManager.waveCountdown = v;
   }
-  get waveLocked(): boolean {
-    return this.waveManager.waveLocked;
-  }
-  set waveLocked(v: boolean) {
-    this.waveManager.waveLocked = v;
-  }
+
   get waveSupply(): number {
     return this.waveManager.waveSupply;
   }
@@ -413,8 +408,13 @@ export default class GameScene extends Phaser.Scene {
     this.abilityCooldowns.pulse = Math.max(0, this.abilityCooldowns.pulse - delta);
 
     this.waveManager.waveCountdown -= delta;
-    this.waveManager.waveLocked = this.waveManager.waveCountdown <= WAVE_CONFIG.lockSeconds;
     while (this.waveManager.waveCountdown <= 0) {
+      if (this.waveManager.waveNumber >= WAVE_CONFIG.maxWaves) {
+        this.checkGameOver(true);
+        this.waveManager.waveCountdown = 999999;
+        return;
+      }
+
       this.waveManager.waveNumber += 1;
       this.waveManager.sendWave(SIDE.PLAYER);
       this.waveManager.sendWave(SIDE.AI);
@@ -422,7 +422,6 @@ export default class GameScene extends Phaser.Scene {
       this.shopManager.rollOffers(SIDE.PLAYER, stageIndex, true);
       this.shopManager.rollOffers(SIDE.AI, stageIndex, true);
       this.waveManager.waveCountdown += this.waveManager.getWaveInterval(this.matchTime);
-      this.waveManager.waveLocked = this.waveManager.waveCountdown <= WAVE_CONFIG.lockSeconds;
     }
   }
 
@@ -1029,7 +1028,6 @@ export default class GameScene extends Phaser.Scene {
       wave: {
         countdown: this.waveManager.waveCountdown,
         interval: this.waveManager.getWaveInterval(this.matchTime || 0),
-        locked: this.waveManager.waveLocked,
         number: this.waveManager.waveNumber || 0,
         phaseLabel: this.waveManager.getPhaseLabel(this.matchTime),
         stageIndex,
@@ -1038,10 +1036,7 @@ export default class GameScene extends Phaser.Scene {
       shop: {
         offers: this.shopManager.getShop(SIDE.PLAYER)?.offers || [],
         rerollCost: this.shopManager.getRerollCost(SIDE.PLAYER),
-        canReroll:
-          this.economy.canAfford(SIDE.PLAYER, this.shopManager.getRerollCost(SIDE.PLAYER)) &&
-          !this.isGameOver &&
-          !this.waveManager.waveLocked
+        canReroll: this.economy.canAfford(SIDE.PLAYER, this.shopManager.getRerollCost(SIDE.PLAYER)) && !this.isGameOver
       },
       waveDraft: this.waveManager.playerDraft,
       waveSupply: this.waveManager.waveSupply,
@@ -1168,10 +1163,20 @@ export default class GameScene extends Phaser.Scene {
     );
   }
 
-  checkGameOver(): void {
-    if (this.getCastleHealth(SIDE.PLAYER) <= 0 || this.getCastleHealth(SIDE.AI) <= 0) {
+  checkGameOver(forceEnd = false): void {
+    const playerHp = this.getCastleHealth(SIDE.PLAYER);
+    const aiHp = this.getCastleHealth(SIDE.AI);
+
+    if (forceEnd || playerHp <= 0 || aiHp <= 0) {
+      if (this.isGameOver) return;
       this.isGameOver = true;
-      const winner = this.getCastleHealth(SIDE.PLAYER) <= 0 ? "AI" : "Player";
+
+      let winner = "Tie";
+      if (playerHp <= 0 && aiHp > 0) winner = "AI";
+      else if (aiHp <= 0 && playerHp > 0) winner = "Player";
+      else if (playerHp > aiHp) winner = "Player";
+      else if (aiHp > playerHp) winner = "AI";
+
       this.events.emit("game-over", winner);
       this.time.addEvent({
         delay: 100,

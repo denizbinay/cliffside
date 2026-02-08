@@ -34,7 +34,6 @@ export default class AIController {
   decide(): void {
     const { waveManager, shopManager, economy } = this.scene;
     if (this.scene.isGameOver) return;
-    if (waveManager.waveLocked) return;
 
     const aiPoints = this.scene.controlPoints.filter((point) => point.owner === SIDE.AI).length;
     const playerPoints = this.scene.controlPoints.filter((point) => point.owner === SIDE.PLAYER).length;

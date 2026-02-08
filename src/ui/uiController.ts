@@ -446,7 +446,7 @@ export default class UIController {
     this.refs.wavePhase.textContent = state.wave.phaseLabel || PHASE_LABELS[state.wave.stageIndex] || "Phase";
     const countdownLabel = state.wave.countdown <= 0.1 ? "Now" : `${Math.ceil(state.wave.countdown)}`;
     this.refs.waveCountdown.textContent = countdownLabel;
-    this.updateWaveRing(state.wave.countdown, state.wave.interval, state.wave.locked);
+    this.updateWaveRing(state.wave.countdown, state.wave.interval);
 
     this.updateControlPips(state.controlPoints || []);
     this.updateShop(state);
@@ -465,7 +465,7 @@ export default class UIController {
     this.refs.waveWarningCount.textContent = `${remaining}`;
   }
 
-  updateWaveRing(countdown: number, interval: number, locked: boolean): void {
+  updateWaveRing(countdown: number, interval: number): void {
     const ring = this.refs.waveRing.querySelector(".wave-ring-progress") as SVGElement;
     if (!ring) return;
     const progress = Math.max(0, Math.min(1, 1 - countdown / Math.max(1, interval)));
@@ -474,7 +474,7 @@ export default class UIController {
     const dash = circumference * (1 - progress);
     ring.style.strokeDasharray = `${circumference}`;
     ring.style.strokeDashoffset = `${dash}`;
-    ring.style.stroke = locked ? "#d6b37d" : countdown <= 5 ? "#e09a6a" : "#7aa3c2";
+    ring.style.stroke = countdown <= 5 ? "#e09a6a" : "#7aa3c2";
     ring.style.opacity = countdown <= 5 ? "0.9" : "1";
     this.refs.waveRing.classList.toggle("is-urgent", countdown <= 5);
   }
@@ -512,7 +512,7 @@ export default class UIController {
         }
         card.dataset.unitId = unit.id;
         card.dataset.tooltipId = unit.id;
-        const enabled = state.playerResources >= unit.cost && !state.isGameOver && !state.wave.locked;
+        const enabled = state.playerResources >= unit.cost && !state.isGameOver;
         card.classList.toggle("is-disabled", !enabled);
         card.style.display = "";
       } else {
@@ -540,13 +540,12 @@ export default class UIController {
   updateWaveBuilder(state: UiState): void {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const draft = state.waveDraft || ({ front: [], mid: [], rear: [] } as any);
-    const locked = state.wave.locked;
     const unlockedColumns = Number(state.wave?.unlockedColumns ?? 4);
 
     const currentStance = state.waveStance || "normal";
     this.stanceButtons.forEach((btn, id) => {
       btn.classList.toggle("is-active", id === currentStance);
-      btn.classList.toggle("is-disabled", locked);
+      btn.classList.toggle("is-disabled", false);
     });
 
     this.waveSlotButtons.forEach((slotBtn) => {
@@ -561,8 +560,8 @@ export default class UIController {
       slotBtn.dataset.tooltipId = unitId || "";
       slotBtn.dataset.columnLocked = columnLocked ? "1" : "0";
       slotBtn.classList.toggle("is-locked-column", columnLocked);
-      slotBtn.classList.toggle("is-disabled", locked || columnLocked);
-      slotBtn.draggable = Boolean(unitId) && !locked && !columnLocked;
+      slotBtn.classList.toggle("is-disabled", columnLocked);
+      slotBtn.draggable = Boolean(unitId) && !columnLocked;
 
       if (unitId && UNIT_TYPES[unitId]) {
         const unit = UNIT_TYPES[unitId];
@@ -600,7 +599,7 @@ export default class UIController {
 
   handleShopClick(card: HTMLButtonElement): void {
     if (!this.scene || card.classList.contains("is-disabled")) return;
-    if (this.state?.isGameOver || this.state?.wave.locked) return;
+    if (this.state?.isGameOver) return;
     const unitId = card.dataset.unitId;
     if (!unitId) return;
     const payload = { id: unitId, fromShop: true };
@@ -620,12 +619,12 @@ export default class UIController {
   }
 
   handleStanceClick(id: string): void {
-    if (!this.scene || this.state?.wave.locked) return;
+    if (!this.scene) return;
     this.scene.events.emit("stance-select", { id });
   }
 
   handleSlotClick(slotBtn: HTMLButtonElement): void {
-    if (!this.scene || this.state?.wave.locked) return;
+    if (!this.scene) return;
     if (slotBtn.dataset.columnLocked === "1") return;
     const row = slotBtn.dataset.row;
     const index = Number(slotBtn.dataset.index || 0);
@@ -636,7 +635,7 @@ export default class UIController {
   }
 
   handleDragStart(event: DragEvent, slotBtn: HTMLButtonElement): void {
-    if (!this.scene || this.state?.wave.locked) return;
+    if (!this.scene) return;
     if (slotBtn.dataset.columnLocked === "1") {
       event.preventDefault();
       return;
@@ -658,14 +657,14 @@ export default class UIController {
   }
 
   handleDragOver(event: DragEvent): void {
-    if (!this.dragSource || this.state?.wave.locked) return;
+    if (!this.dragSource) return;
     if ((event.currentTarget as HTMLElement)?.dataset?.columnLocked === "1") return;
     event.preventDefault();
     if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
   }
 
   handleDrop(event: DragEvent, slotBtn: HTMLButtonElement): void {
-    if (!this.scene || !this.dragSource || this.state?.wave.locked) return;
+    if (!this.scene || !this.dragSource) return;
     if (slotBtn.dataset.columnLocked === "1") return;
     event.preventDefault();
     const targetRow = slotBtn.dataset.row!;

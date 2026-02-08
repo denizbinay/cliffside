@@ -95,14 +95,14 @@ export const ECONOMY_CONFIG: EconomyConfig = {
 };
 
 export const WAVE_CONFIG: WaveConfig = {
-  lockSeconds: 5,
+  maxWaves: 12,
   supply: 12,
   slots: { front: 4, mid: 4, rear: 4 },
   stagger: 0.2,
   schedule: [
-    { time: 0, interval: 45 },
-    { time: 180, interval: 35 },
-    { time: 420, interval: 25 }
+    { time: 0, interval: 35 },
+    { time: 90, interval: 30 },
+    { time: 210, interval: 25 }
   ],
   baseUnlockedColumns: 2,
   roleDiminishingThreshold: 3,
